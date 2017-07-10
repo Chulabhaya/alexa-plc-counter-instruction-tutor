@@ -678,12 +678,12 @@ def on_intent(intent_request, session):
     elif intent_name == "AMAZON.YesIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return get_question_from_session(intent, session)
-        elif session['attributes']['CurrentStage'] == "HelpRequest"
+        elif session['attributes']['CurrentStage'] == "HelpRequest":
             return get_question_from_session(intent, session)
     elif intent_name == "AMAZON.NoIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return handle_session_end_request()
-        if session['attributes']['CurrentStage'] == "HelpRequest"
+        if session['attributes']['CurrentStage'] == "HelpRequest":
             return handle_session_end_request()
     elif intent_name == "AMAZON.HelpIntent":
         return handle_help_request(intent, session)
