@@ -452,7 +452,7 @@ def handle_session_end_request():
     """ Ends the Alexa session when a user requests it. """
 
     card_title = "Session Ended"
-    speech_output = "<speak>" + "Thanks for trying out the Alexa PLC counter instruction tutor." \
+    speech_output = "<speak>" + "Thanks for trying out the Alexa PLC counter instruction tutor. " \
                     "Have a nice day!" + "</speak>"
     # Setting this to true ends the session and exits the skill.
     should_end_session = True
@@ -464,17 +464,17 @@ def handle_repeat_request(intent, session):
     session to repeat from, it will be repeated. Otherwise a new
     session will be started. """
 
-    if 'attributes' not in session or 'speech_output' not in session['attributes']:
+    if 'attributes' not in session or 'SpeechOutput' not in session['attributes']:
         return get_welcome_response()
     else:
         previous_attributes = session.get('attributes', {})
-        card_title = previous_attributes['card_title']
-        speech_output = previous_attributes['speech_output']
-        reprompt_text = previous_attributes['reprompt_text']
+        card_title = previous_attributes['CardTitle']
+        speech_output = previous_attributes['SpeechOutput']
+        reprompt_text = previous_attributes['RepromptText']
         should_end_session = False
-        
+
         return build_response(previous_attributes, build_speechlet_response(
-        card_title, speech_output, reprompt_text, should_end_session))
+            card_title, speech_output, reprompt_text, should_end_session))
 
 def handle_help_request(intent, session):
     """ Handles a user's request for help. """
@@ -496,15 +496,17 @@ def handle_help_request(intent, session):
             "correct answer, which I will be able to recognize. "
             "Would you like another question?" + "</speak>"
         )
-
+    reprompt_text = None
     session_attributes = {
+        "CardTitle": card_title,
+        "SpeechOutput": speech_output,
+        "RepromptText": reprompt_text,
         "CurrentStage": "HelpRequest",
     }
-
     should_end_session = False
 
     return build_response(session_attributes, build_speechlet_response(
-        card_title, speech_output, None, should_end_session))
+        card_title, speech_output, reprompt_text, should_end_session))
 
 def get_question_from_session(intent, session):
     """ Randomly generates question and prepares the speech with
@@ -523,7 +525,18 @@ def get_question_from_session(intent, session):
         question_full = generate_true_false(current_user_level)
 
         card_title = "True or False Question"
+        speech_output = (
+            "<speak>" + '"<prosody rate="slow">"' + "True or False? "
+            + question_full[1] + "</prosody>" + "</speak>"
+        )
+        reprompt_text = (
+            "I didn't get your answer. Please reply True or "
+            "False about this statement: " + question_full[1]
+        )
         session_attributes = {
+            "CardTitle": card_title,
+            "SpeechOutput": speech_output,
+            "RepromptText": reprompt_text,
             "CurrentStage": "GenerateQuestion",
             "QuestionType": "TrueFalse",
             "QuestionAttribute": question_full[0],
@@ -533,26 +546,10 @@ def get_question_from_session(intent, session):
         }
         should_end_session = False
 
-        speech_output = (
-            "<speak>" + '"<prosody rate="slow">"' + "True or False? "
-            + question_full[1] + "</prosody>" + "</speak>"
-        )
-        reprompt_text = (
-            "I didn't get your answer. Please reply True or "
-            "False about this statement: " + question_full[1]
-        )
     elif question_type_num == 1:
         question_full = generate_select_value()
 
         card_title = "Short Answer Question"
-        session_attributes = {
-            "CurrentStage": "GenerateQuestion",
-            "QuestionType": "SelectValue",
-            "Question": question_full[0],
-            "Answer": question_full[1],
-        }
-        should_end_session = False
-
         speech_output = (
             "<speak>" + '"<prosody rate="slow">"' + question_full[0]
             + "</prosody>" + "</speak>"
@@ -561,6 +558,16 @@ def get_question_from_session(intent, session):
             "I didn't get your answer. Please answer the following question: "
             + question_full[0]
         )
+        session_attributes = {
+            "CardTitle": card_title,
+            "SpeechOutput": speech_output,
+            "RepromptText": reprompt_text,
+            "CurrentStage": "GenerateQuestion",
+            "QuestionType": "SelectValue",
+            "Question": question_full[0],
+            "Answer": question_full[1],
+        }
+        should_end_session = False
 
     return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, reprompt_text, should_end_session))
@@ -634,9 +641,12 @@ def check_answer_in_session(intent, session):
         should_end_session = False
 
     session_attributes = {
+        "CardTitle": card_title,
+        "SpeechOutput": speech_output,
+        "RepromptText": reprompt_text,
         "CurrentStage": "CheckAnswer",
         "QuestionType": question_details["QuestionType"],
-        }
+    }
 
     return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, reprompt_text, should_end_session))
@@ -675,6 +685,10 @@ def on_intent(intent_request, session):
         return get_question_from_session(intent, session)
     elif intent_name == "AnswerIntent":
         return check_answer_in_session(intent, session)
+    elif intent_name == "AMAZON.HelpIntent":
+        return handle_help_request(intent, session)
+    elif intent_name == "AMAZON.RepeatIntent":
+        return handle_repeat_request(intent, session)
     elif intent_name == "AMAZON.YesIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return get_question_from_session(intent, session)
@@ -685,8 +699,6 @@ def on_intent(intent_request, session):
             return handle_session_end_request()
         if session['attributes']['CurrentStage'] == "HelpRequest":
             return handle_session_end_request()
-    elif intent_name == "AMAZON.HelpIntent":
-        return handle_help_request(intent, session)
     elif intent_name == "AMAZON.CancelIntent" or intent_name == "AMAZON.StopIntent":
         return handle_session_end_request()
     else:
