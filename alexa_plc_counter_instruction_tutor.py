@@ -460,7 +460,21 @@ def handle_session_end_request():
         card_title, speech_output, None, should_end_session))
 
 def handle_repeat_request(intent, session):
-    print("abd")
+    """ Repeats the previous speech output. If there is a previous
+    session to repeat from, it will be repeated. Otherwise a new
+    session will be started. """
+
+    if 'attributes' not in session or 'speech_output' not in session['attributes']:
+        return get_welcome_response()
+    else:
+        previous_attributes = session.get('attributes', {})
+        card_title = previous_attributes['card_title']
+        speech_output = previous_attributes['speech_output']
+        reprompt_text = previous_attributes['reprompt_text']
+        should_end_session = False
+        
+        return build_response(previous_attributes, build_speechlet_response(
+        card_title, speech_output, reprompt_text, should_end_session))
 
 def handle_help_request(intent, session):
     """ Handles a user's request for help. """
@@ -470,42 +484,23 @@ def handle_help_request(intent, session):
     # Depending on the current stage of the interaction, a different
     # help response is provided to the user.
     session_details = session.get('attributes', {})
-    if session_details["CurrentStage"] == "CheckAnswer":
-        if session_details["QuestionType"] == "TrueFalse":
-            speech_output = (
-                "<speak>" + "For a true or false question, you simply need to reply "
-                "with either the word true, or the word false. Would you like "
-                "another question?" + "</speak>"
-            )
-        elif session_details["QuestionType"] == "SelectValue":
-            speech_output = (
-                "<speak>" + "For a short answer question, you need to reply with the "
-                "correct answer, which I will be able to recognize. "
-                "Would you like another question?" + "</speak>"
-            )
+    if session_details["QuestionType"] == "TrueFalse":
+        speech_output = (
+            "<speak>" + "For a true or false question, you simply need to reply "
+            "with either the word true, or the word false. Would you like "
+            "another question?" + "</speak>"
+        )
+    elif session_details["QuestionType"] == "SelectValue":
+        speech_output = (
+            "<speak>" + "For a short answer question, you need to reply with the "
+            "correct answer, which I will be able to recognize. "
+            "Would you like another question?" + "</speak>"
+        )
 
-        session_attributes = {
-            "CurrentStage": "HelpRequest",
-            "RequestType": "NewQuestion",
-        }
-    elif session_details["CurrentStage"] == "GenerateQuestion":
-        if session_details["QuestionType"] == "TrueFalse":
-            speech_output = (
-                "<speak>" + "For a true or false question, you simply need to reply "
-                "with either the word true, or the word false. Do you want me to "
-                "repeat the question?" + "</speak>"
-            )
-        elif session_details["QuestionType"] == "SelectValue":
-            speech_output = (
-                "<speak>" + "For a short answer question, you need to reply with the "
-                "correct answer, which I will be able to recognize. Do you want me "
-                "to repeat the question?" + "</speak>"
-            )
+    session_attributes = {
+        "CurrentStage": "HelpRequest",
+    }
 
-        session_attributes = {
-            "CurrentStage": "HelpRequest",
-            "RequestType": "RepeatQuestion",
-        }
     should_end_session = False
 
     return build_response(session_attributes, build_speechlet_response(
@@ -683,14 +678,12 @@ def on_intent(intent_request, session):
     elif intent_name == "AMAZON.YesIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return get_question_from_session(intent, session)
-        elif session['attributes']['CurrentStage'] == "HelpRequest"\
-            and session['attributes']['RequestType'] == "NewQuestion":
+        elif session['attributes']['CurrentStage'] == "HelpRequest"
             return get_question_from_session(intent, session)
     elif intent_name == "AMAZON.NoIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return handle_session_end_request()
-        if session['attributes']['CurrentStage'] == "HelpRequest"\
-        and session['attributes']['RequestType'] == "NewQuestion":
+        if session['attributes']['CurrentStage'] == "HelpRequest"
             return handle_session_end_request()
     elif intent_name == "AMAZON.HelpIntent":
         return handle_help_request(intent, session)
