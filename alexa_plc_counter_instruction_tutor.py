@@ -689,6 +689,8 @@ def on_intent(intent_request, session):
         return handle_help_request(intent, session)
     elif intent_name == "AMAZON.RepeatIntent":
         return handle_repeat_request(intent, session)
+    elif intent_name == "AMAZON.StartOverIntent":
+        return get_welcome_response()
     elif intent_name == "AMAZON.YesIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return get_question_from_session(intent, session)
