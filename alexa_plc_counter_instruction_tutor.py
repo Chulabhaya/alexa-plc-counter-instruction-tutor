@@ -44,10 +44,145 @@ def build_response(session_attributes, speechlet_response):
         'response': speechlet_response
     }
 
+# --------------- Functions used for user management --------------- #
+def add_user(user_id):
+    """ Adds a new user to the user database. """
+
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+    user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
+    response = user_data_dynamodb.put_item(
+        Item={
+            'UserID': user_id,
+            'CounterCorrect': {
+                'bit that is set when the counter limit is reached': decimal.Decimal(0),
+                'can be used to': decimal.Decimal(0),
+                'counts': decimal.Decimal(0),
+                'DN bit is set': decimal.Decimal(0),
+                'DN bit remains set until': decimal.Decimal(0),
+                'enable bit is not set if': decimal.Decimal(0),
+                'enable bit is set when': decimal.Decimal(0),
+                'enable bit remains set until': decimal.Decimal(0),
+                'if the rung goes False': decimal.Decimal(0),
+                'overflow bit is set when': decimal.Decimal(0),
+                'overflow bit remains set until': decimal.Decimal(0),
+                'stands for': decimal.Decimal(0),
+                'to reset AC': decimal.Decimal(0),
+                'underflow bit is set when': decimal.Decimal(0),
+                'underflow bit remains set until': decimal.Decimal(0),
+                'when AC is equal to or greater than PR': decimal.Decimal(0),
+                'when the rung goes from True to False and AC is greater than PR': decimal.Decimal(0),
+                'when the rung goes True': decimal.Decimal(0)
+            },
+            'CounterIncorrect': {
+                'bit that is set when the counter limit is reached': decimal.Decimal(0),
+                'can be used to': decimal.Decimal(0),
+                'counts': decimal.Decimal(0),
+                'DN bit is set': decimal.Decimal(0),
+                'DN bit remains set until': decimal.Decimal(0),
+                'enable bit is not set if': decimal.Decimal(0),
+                'enable bit is set when': decimal.Decimal(0),
+                'enable bit remains set until': decimal.Decimal(0),
+                'if the rung goes False': decimal.Decimal(0),
+                'overflow bit is set when': decimal.Decimal(0),
+                'overflow bit remains set until': decimal.Decimal(0),
+                'stands for': decimal.Decimal(0),
+                'to reset AC': decimal.Decimal(0),
+                'underflow bit is set when': decimal.Decimal(0),
+                'underflow bit remains set until': decimal.Decimal(0),
+                'when AC is equal to or greater than PR': decimal.Decimal(0),
+                'when the rung goes from True to False and AC is greater than PR': decimal.Decimal(0),
+                'when the rung goes True': decimal.Decimal(0)
+            },
+            'PreviousTotalCorrect': decimal.Decimal(0),
+            'PreviousTotalIncorrect': decimal.Decimal(0),
+            'QuestionLevel': decimal.Decimal(1),
+            'TutoringStatus': {
+                'MaxOrder': decimal.Decimal(1),
+                'OrderLevel': decimal.Decimal(1),
+                'StatementLevel': decimal.Decimal(1)
+            }
+        }
+    )
+
+def user_exists(user_id):
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+    user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
+    user_id_query = user_data_dynamodb.query(
+        KeyConditionExpression=Key('UserID').eq(user_id)
+    )
+    if len(user_id_query['Items']) == 0:
+        return False
+    else:
+        return True
+
+def update_user_level(user_id):
+    """ Keeps track of and updates the user's question difficulty level as they
+    keep answering questions. """
+
+    # Store previous totals
+    previous_total_correct = get_previous_total_correct(user_id)
+    previous_total_incorrect = get_previous_total_incorrect(user_id)
+
+    # Conditionals to update level, <= 4 because 4 is the max difficulty level
+    if get_question_level(user_id) <= 4:
+        # Get the current totals. These values differ from the previous total
+        # values stored above because these values take into account the question the
+        # user answered just before reaching this stage and asking for a new question.
+        current_total_correct = get_total_correct(user_id)
+        current_total_incorrect = get_total_incorrect(user_id)
+
+        # Conditionals to deal with initial conditions that could happen when
+        # the user first starts answering questions.
+        if current_total_correct == 0 and current_total_incorrect == 0:
+            increment_question_level(user_id)
+            decrement_question_level(user_id)
+        elif current_total_correct != 0 and current_total_incorrect == 0:
+            if current_total_correct % 5 == 0:
+                increment_question_level(user_id)
+            else:
+                increment_question_level(user_id)
+                decrement_question_level(user_id)
+        elif current_total_correct == 0 and current_total_incorrect != 0:
+            if current_total_incorrect % 3 == 0:
+                if get_question_level(user_id) == 1:
+                    increment_question_level(user_id)
+                    decrement_question_level(user_id)
+                else:
+                    decrement_question_level(user_id)
+            else:
+                increment_question_level(user_id)
+                decrement_question_level(user_id)
+
+        # The following conditionals deal with conditions that can happen after a user
+        # has questions both right and wrong.
+        else:
+            if (previous_total_correct == current_total_correct
+                    and current_total_incorrect % 3 != 0)\
+                or (previous_total_incorrect == current_total_incorrect
+                    and current_total_correct % 5 != 0):
+                increment_question_level(user_id)
+                decrement_question_level(user_id)
+            elif current_total_correct % 5 == 0 and current_total_incorrect % 3 == 0:
+                decrement_question_level(user_id)
+            elif current_total_correct % 5 == 0 and current_total_incorrect % 3 != 0:
+                increment_question_level(user_id)
+            elif current_total_correct % 5 != 0 and current_total_incorrect % 3 == 0:
+                decrement_question_level(user_id)
+            else:
+                increment_question_level(user_id)
+                decrement_question_level(user_id)
+
+    # Update the previous totals to current totals
+    update_previous_total_correct(user_id)
+    update_previous_total_incorrect(user_id)
+
+    new_level = get_question_level(user_id)
+    return new_level
+
 # --------------- Functions used for tutoring statement generations
 # ---------------
 
-def increment_order_level():
+def increment_order_level(user_id):
     """ Increments the order level counter that allows statements within a
     certain statement level to be presented in order to the user. """
 
@@ -55,7 +190,7 @@ def increment_order_level():
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set TutoringStatus.OrderLevel = TutoringStatus.OrderLevel + :val",
         ExpressionAttributeValues={
@@ -64,7 +199,7 @@ def increment_order_level():
         ReturnValues="UPDATED_NEW"
     )
 
-def reset_order_level():
+def reset_order_level(user_id):
     """ Resets the order level to 1. Generally reset at the beginning of
     a new statement level, since each statement level may have a different
     number of statements. """
@@ -73,7 +208,7 @@ def reset_order_level():
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set TutoringStatus.OrderLevel = :val",
         ExpressionAttributeValues={
@@ -82,14 +217,14 @@ def reset_order_level():
         ReturnValues="UPDATED_NEW"
     )
 
-def get_order_level():
+def get_order_level(user_id):
     """ Returns the current order level. Used to keep track of where the
     program is in presenting all the statements within a statement level. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     tutoring_status_query = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in tutoring_status_query['Items']:
         order_level = (i['TutoringStatus']['OrderLevel'])
     return order_level
@@ -112,7 +247,7 @@ def get_max_order_levels(statement_level):
         order_levels_counter += 1
     return order_levels_counter
 
-def increment_statement_level():
+def increment_statement_level(user_id):
     """ Increments the statement level counter that is used by the program
     to track where it is (statement level) in the tutoring process. """
 
@@ -120,7 +255,7 @@ def increment_statement_level():
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set TutoringStatus.StatementLevel = TutoringStatus.StatementLevel + :val",
         ExpressionAttributeValues={
@@ -129,14 +264,14 @@ def increment_statement_level():
         ReturnValues="UPDATED_NEW"
     )
 
-def reset_statement_level():
+def reset_statement_level(user_id):
     """ Resets the statement level counter to 1. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set TutoringStatus.StatementLevel = :val",
         ExpressionAttributeValues={
@@ -145,110 +280,69 @@ def reset_statement_level():
         ReturnValues="UPDATED_NEW"
     )
 
-def get_statement_level():
+def get_statement_level(user_id):
     """ Returns the current statement level. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     tutoring_status_query = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in tutoring_status_query['Items']:
         statement_level = (i['TutoringStatus']['StatementLevel'])
     return statement_level
 
+def get_tutoring_statement(statement_level, order_level):
+    """ Returns a tutoring statement based on an input statement level and
+    order level. """
+
+    # Allow for filtering of questions for a requested level
+    filter_expression = Attr("StatementLevel").eq(statement_level)\
+        & Attr("OrderLevel").eq(order_level)
+
+    # List to store question details to be returned to caller function
+    statement_details = []
+
+    # Set up access to necessary databases from DynamoDB
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+    tutor_table_dynamodb = dynamodb.Table('TutorTable')
+    tutor_table = tutor_table_dynamodb.scan(
+        FilterExpression=filter_expression,
+    )
+
+    # Obtain question template components from database
+    for item in tutor_table['Items']:
+        statement_details.append(item['TutoringStatements'])
+
+    return statement_details
+
 # --------------- Functions used for question generation and testing operations
 # ---------------
 
-# Tracks and updates a user's question level during testing
-def update_user_level():
-    """ Keeps track of and updates the user's question difficulty level as they
-    keep answering questions. """
-
-    # Store previous totals
-    previous_total_correct = get_previous_total_correct()
-    previous_total_incorrect = get_previous_total_incorrect()
-
-    # Conditionals to update level, < 4 because 4 is the max difficulty level
-    if get_question_level() < 4:
-        # Get the current totals. These values differ from the previous total
-        # values stored above because these values take into account the question the
-        # user answered just before reaching this stage and asking for a new question.
-        current_total_correct = get_total_correct()
-        current_total_incorrect = get_total_incorrect()
-
-        # Conditionals to deal with initial conditions that could happen when
-        # the user first starts answering questions.
-        if current_total_correct == 0 and current_total_incorrect == 0:
-            increment_question_level()
-            decrement_question_level()
-        elif current_total_correct != 0 and current_total_incorrect == 0:
-            if current_total_correct % 5 == 0:
-                increment_question_level()
-            else:
-                increment_question_level()
-                decrement_question_level()
-        elif current_total_correct == 0 and current_total_incorrect != 0:
-            if current_total_incorrect % 3 == 0:
-                if get_question_level() == 1:
-                    increment_question_level()
-                    decrement_question_level()
-                else:
-                    decrement_question_level()
-            else:
-                increment_question_level()
-                decrement_question_level()
-
-        # The following conditionals deal with conditions that can happen after a user
-        # has questions both right and wrong.
-        else:
-            if (previous_total_correct == current_total_correct
-                    and current_total_incorrect % 3 != 0)\
-                or (previous_total_incorrect == current_total_incorrect
-                    and current_total_correct % 5 != 0):
-                increment_question_level()
-                decrement_question_level()
-            elif current_total_correct % 5 == 0 and current_total_incorrect % 3 == 0:
-                decrement_question_level()
-            elif current_total_correct % 5 == 0 and current_total_incorrect % 3 != 0:
-                increment_question_level()
-            elif current_total_correct % 5 != 0 and current_total_incorrect % 3 == 0:
-                decrement_question_level()
-            else:
-                increment_question_level()
-                decrement_question_level()
-
-    # Update the previous totals to current totals
-    update_previous_total_correct()
-    update_previous_total_incorrect()
-
-    new_level = get_question_level()
-    return new_level
-
-def get_total_correct():
+def get_total_correct(user_id):
     """ Returns the total number of questions the user has answered correctly. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     counter_current_value = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in counter_current_value['Items']:
         counter_result = (i['CounterCorrect'])
     counter_result_sum = sum(counter_result.values())
     return counter_result_sum
 
-def get_total_incorrect():
+def get_total_incorrect(user_id):
     """ Returns the total number of questions the user has answered incorrectly. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     counter_current_value = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in counter_current_value['Items']:
         counter_result = (i['CounterIncorrect'])
     counter_result_sum = sum(counter_result.values())
     return counter_result_sum
 
-def update_previous_total_correct():
+def update_previous_total_correct(user_id):
     """ Updates the previous total correct tracker, which is used to deal with
     the scenario where a user is stuck on a certain correct total.
     Check update_user_level() function for a better understanding. """
@@ -256,14 +350,14 @@ def update_previous_total_correct():
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     counter_current_value = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in counter_current_value['Items']:
         counter_result = (i['CounterCorrect'])
     counter_result_sum = sum(counter_result.values())
 
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set PreviousTotalCorrect = :val",
         ExpressionAttributeValues={
@@ -272,19 +366,19 @@ def update_previous_total_correct():
         ReturnValues="UPDATED_NEW"
     )
 
-def get_previous_total_correct():
+def get_previous_total_correct(user_id):
     """ Returns the previous total correct value, sum of all of the individual
     attribute values. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     previous_total_query = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in previous_total_query['Items']:
-        previous_total_query = (i['PreviousTotalCorrect'])
-    return previous_total_query
+        previous_total_correct = (i['PreviousTotalCorrect'])
+    return previous_total_correct
 
-def update_previous_total_incorrect():
+def update_previous_total_incorrect(user_id):
     """ Updates the previous total incorrect tracker, which is used to deal with
     the scenario where a user is stuck on a incorrect total.
     Check update_user_level() function for a better understanding. """
@@ -292,14 +386,14 @@ def update_previous_total_incorrect():
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     counter_current_value = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in counter_current_value['Items']:
         counter_result = (i['CounterIncorrect'])
     counter_result_sum = sum(counter_result.values())
 
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set PreviousTotalIncorrect = :val",
         ExpressionAttributeValues={
@@ -308,19 +402,19 @@ def update_previous_total_incorrect():
         ReturnValues="UPDATED_NEW"
     )
 
-def get_previous_total_incorrect():
+def get_previous_total_incorrect(user_id):
     """ Returns the previous total incorrect value, sum of all of the individual
     attribute values. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     previous_total_query = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in previous_total_query['Items']:
-        previous_total_query = (i['PreviousTotalCorrect'])
-    return previous_total_query
+        previous_total_incorrect = (i['PreviousTotalIncorrect'])
+    return previous_total_incorrect
 
-def increment_question_correct(attribute_type):
+def increment_question_correct(user_id, attribute_type):
     """ Increments the correct tracker for the specific attribute type
     question a user answered correctly. """
 
@@ -328,7 +422,7 @@ def increment_question_correct(attribute_type):
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set #ctrcor.#atrval = #ctrcor.#atrval + :val",
         ExpressionAttributeValues={
@@ -341,7 +435,7 @@ def increment_question_correct(attribute_type):
         ReturnValues="UPDATED_NEW"
     )
 
-def increment_question_incorrect(attribute_type):
+def increment_question_incorrect(user_id, attribute_type):
     """ Increments the incorrect tracker for the specific attribute type
     question a user answered incorrectly. """
 
@@ -349,7 +443,7 @@ def increment_question_incorrect(attribute_type):
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set #ctrincor.#atrval = #ctrincor.#atrval + :val",
         ExpressionAttributeValues={
@@ -362,14 +456,14 @@ def increment_question_incorrect(attribute_type):
         ReturnValues="UPDATED_NEW"
     )
 
-def increment_question_level():
+def increment_question_level(user_id):
     """ Increments the question level tracker. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set QuestionLevel = QuestionLevel + :val",
         ExpressionAttributeValues={
@@ -378,14 +472,14 @@ def increment_question_level():
         ReturnValues="UPDATED_NEW"
     )
 
-def decrement_question_level():
+def decrement_question_level(user_id):
     """ Decrements the question level tracker. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     response = user_data_dynamodb.update_item(
         Key={
-            'UserID': "Tester",
+            'UserID': user_id,
         },
         UpdateExpression="set QuestionLevel = QuestionLevel - :val",
         ExpressionAttributeValues={
@@ -394,12 +488,12 @@ def decrement_question_level():
         ReturnValues="UPDATED_NEW"
     )
 
-def get_question_level():
+def get_question_level(user_id):
     """ Returns the current question level. """
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
     user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
     current_level_query = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
-        .eq("Tester"))
+        .eq(user_id))
     for i in current_level_query['Items']:
         current_level = (i['QuestionLevel'])
     return current_level
@@ -569,16 +663,24 @@ def generate_true_false(question_level):
 
 # --------------- Functions that control the skill's behavior ------------------
 
-def get_welcome_response():
+def get_welcome_response(session):
     """ Standard welcome response to the skill, normally said by Alexa if
     a user invokes the skill without an intent.
     """
-
-    session_attributes = {}
     card_title = "Welcome"
-    speech_output = "Welcome to the Alexa PLC counter instruction tutor. " \
-                    "Please ask me a question by saying something like, " \
-                    "quiz me, or give me a question."
+    session_attributes = {}
+    session_user = session.get('user', {})
+    user_id = session_user['userId']
+    if user_exists(user_id):
+        speech_output = "Welcome back! " \
+                        "Please ask me a question by saying something like " \
+                        "quiz me, or give me a question."
+    else:
+        add_user(user_id)
+        speech_output = "Welcome to the PLC Counter Instruction Tutor! " \
+                        "Please ask me a question by saying something like " \
+                        "quiz me, or give me a question."
+
     # If the user either does not reply to the welcome message or says something
     # that is not understood, they will be prompted again with this text.
     reprompt_text = "Please ask me a question by saying something like, " \
@@ -604,7 +706,7 @@ def handle_repeat_request(intent, session):
     session will be started. """
 
     if 'attributes' not in session or 'SpeechOutput' not in session['attributes']:
-        return get_welcome_response()
+        return get_welcome_response(session)
     else:
         previous_attributes = session.get('attributes', {})
         card_title = previous_attributes['CardTitle']
@@ -651,9 +753,16 @@ def get_question_from_session(intent, session):
     """ Randomly generates question and prepares the speech with
     question to reply to the user.
     """
+    session_user = session.get('user', {})
+    user_id = session_user['userId']
+    if user_exists(user_id):
+        pass
+    else:
+        add_user(user_id)
+
     # Check user's status with correct/incorrect questions and update level
     # accordingly before generating a new question.
-    current_user_level = update_user_level()
+    current_user_level = update_user_level(user_id)
 
     # Generate either a True/False or Select Value type question and relay it
     # back to the user.
@@ -717,6 +826,8 @@ def check_answer_in_session(intent, session):
     """
 
     card_title = "Answer Response"
+    session_user = session.get('user', {})
+    user_id = session_user['userId']
 
     # If a user's answer matches a slot value, depending on whether
     # the user is responding to a True/False question or a SelectValue
@@ -733,7 +844,7 @@ def check_answer_in_session(intent, session):
                     question_details["FullAnswer"] + '"<break time="2s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
-                increment_question_correct(question_details["QuestionAttribute"])
+                increment_question_correct(user_id, question_details["QuestionAttribute"])
             elif (question_details["PartialAnswer"] == "false") \
                 and (user_answer == "false"):
                 speech_output = (
@@ -741,7 +852,7 @@ def check_answer_in_session(intent, session):
                     question_details["FullAnswer"] + '"<break time="2s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
-                increment_question_correct(question_details["QuestionAttribute"])
+                increment_question_correct(user_id, question_details["QuestionAttribute"])
             elif (question_details["PartialAnswer"] == "true") \
                 and (user_answer == "false"):
                 speech_output = (
@@ -749,7 +860,7 @@ def check_answer_in_session(intent, session):
                     question_details["FullAnswer"] + '"<break time="2s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
-                increment_question_incorrect(question_details["QuestionAttribute"])
+                increment_question_incorrect(user_id, question_details["QuestionAttribute"])
             elif (question_details["PartialAnswer"] == "false") \
                 and (user_answer == "true"):
                 speech_output = (
@@ -757,7 +868,7 @@ def check_answer_in_session(intent, session):
                     question_details["FullAnswer"] + '"<break time="2s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
-                increment_question_incorrect(question_details["QuestionAttribute"])
+                increment_question_incorrect(user_id, question_details["QuestionAttribute"])
         elif question_details["QuestionType"] == "SelectValue":
             if user_answer in question_details["Answer"]:
                 speech_output = (
@@ -791,7 +902,58 @@ def check_answer_in_session(intent, session):
         card_title, speech_output, reprompt_text, should_end_session))
 
 def handle_tutor_request(intent, session):
-    print("test")
+    """ Provides tutoring information output. """
+
+    card_title = "Teaching Counter Instructions"
+    session_user = session.get('user', {})
+    user_id = session_user['userId']
+
+    current_statement_level = get_statement_level(user_id)
+    current_order_level = get_order_level(user_id)
+    max_order_level = get_max_order_levels(current_statement_level)
+
+    if current_statement_level <= 4:
+        if current_order_level <= max_order_level:
+            tutoring_statement = get_tutoring_statement(
+                current_statement_level,
+                current_order_level
+            )
+            increment_order_level(user_id)
+            speech_output = "<speak>" + '"<prosody rate="slow">"'
+            for index, statements in enumerate(tutoring_statement[0]):
+                speech_output += tutoring_statement[0][index] + " "
+            speech_output += "</prosody>" + "</speak>"
+        else:
+            reset_order_level(user_id)
+            increment_statement_level(user_id)
+            current_statement_level = get_statement_level(user_id)
+            current_order_level = get_order_level(user_id)
+            tutoring_statement = get_tutoring_statement(
+                current_statement_level, 
+                current_order_level
+            )
+            increment_order_level(user_id)
+            speech_output = "<speak>" + '"<prosody rate="slow">"'
+            for index, statements in enumerate(tutoring_statement[0]):
+                speech_output += tutoring_statement[0][index] + " "
+            speech_output += "</prosody>" + "</speak>"
+    else:
+        speech_output = (
+            "<speak>" + '"<prosody rate="slow">"' + "You've reached the end of the " +
+            "tutoring session. Great work! I can now quiz you if you say quiz me, " +
+            "or you can exit the program."  + "</prosody>" + "</speak>"
+        )
+
+    reprompt_text = None
+    session_attributes = {
+        "CardTitle": card_title,
+        "SpeechOutput": speech_output,
+        "RepromptText": reprompt_text,
+    }
+    should_end_session = False
+
+    return build_response(session_attributes, build_speechlet_response(
+        card_title, speech_output, reprompt_text, should_end_session))
 # --------------- Events ------------------
 
 def on_session_started(session_started_request, session):
@@ -809,7 +971,7 @@ def on_launch(launch_request, session):
     print("on_launch requestId=" + launch_request['requestId'] +
           ", sessionId=" + session['sessionId'])
     # Dispatch to your skill's launch
-    return get_welcome_response()
+    return get_welcome_response(session)
 
 
 def on_intent(intent_request, session):
@@ -833,7 +995,7 @@ def on_intent(intent_request, session):
     elif intent_name == "AMAZON.RepeatIntent":
         return handle_repeat_request(intent, session)
     elif intent_name == "AMAZON.StartOverIntent":
-        return get_welcome_response()
+        return get_welcome_response(session)
     elif intent_name == "AMAZON.YesIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return get_question_from_session(intent, session)
