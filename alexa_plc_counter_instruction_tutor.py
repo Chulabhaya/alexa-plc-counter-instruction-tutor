@@ -97,11 +97,83 @@ def add_user(user_id):
             'PreviousTotalIncorrect': decimal.Decimal(0),
             'QuestionLevel': decimal.Decimal(1),
             'TutoringStatus': {
-                'MaxOrder': decimal.Decimal(1),
                 'OrderLevel': decimal.Decimal(1),
                 'StatementLevel': decimal.Decimal(1)
             }
         }
+    )
+
+def reset_user(user_id):
+    """ Resets a user to new user state. """
+
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+    user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
+    user_db = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
+        .eq(user_id))
+
+    # Resets CounterCorrect column
+    for i in user_db['Items']:
+        counter_correct = (i['CounterCorrect'])
+    for key in counter_correct:
+        response = user_data_dynamodb.update_item(
+            Key={
+                'UserID': user_id,
+            },
+            UpdateExpression="set #ctrcor.#atr = :atrreset",
+            ExpressionAttributeValues={
+                ':atrreset': decimal.Decimal(0)
+            },
+            ExpressionAttributeNames={
+                '#ctrcor': "CounterCorrect",
+                '#atr': key,
+            },
+            ReturnValues="UPDATED_NEW"
+        )
+
+    # Resets CounterIncorrect column
+    for i in user_db['Items']:
+        counter_incorrect = (i['CounterIncorrect'])
+    for key in counter_incorrect:
+        response = user_data_dynamodb.update_item(
+            Key={
+                'UserID': user_id,
+            },
+            UpdateExpression="set #ctrincor.#atr = :atrreset",
+            ExpressionAttributeValues={
+                ':atrreset': decimal.Decimal(0)
+            },
+            ExpressionAttributeNames={
+                '#ctrincor': "CounterIncorrect",
+                '#atr': key,
+            },
+            ReturnValues="UPDATED_NEW"
+        )
+
+    # Resets PreviousTotalCorrect, PreviousTotalIncorrect, and QuestionLevel columns
+    response = user_data_dynamodb.update_item(
+        Key={
+            'UserID': user_id,
+        },
+        UpdateExpression="set PreviousTotalCorrect = :val1, PreviousTotalIncorrect = :val1,"\
+            + "QuestionLevel = :val2",
+        ExpressionAttributeValues={
+            ':val1': decimal.Decimal(0),
+            ':val2': decimal.Decimal(1)
+        },
+        ReturnValues="UPDATED_NEW"
+    )
+
+    # Resets TutoringStatus column
+    response = user_data_dynamodb.update_item(
+        Key={
+            'UserID': user_id,
+        },
+        UpdateExpression="set TutoringStatus.OrderLevel = :val,"\
+            + "TutoringStatus.StatementLevel = :val",
+        ExpressionAttributeValues={
+            ':val': decimal.Decimal(1)
+        },
+        ReturnValues="UPDATED_NEW"
     )
 
 def user_exists(user_id):
@@ -229,8 +301,6 @@ def get_order_level(user_id):
         order_level = (i['TutoringStatus']['OrderLevel'])
     return order_level
 
-# Used to make sure the program doesn't try to exceed bounds of # of statements
-# there are within a statement level.
 def get_max_order_levels(statement_level):
     """ Returns the max limit of the order levels. Used to make sure the program
     doesn't try to exceed bounds of # of statements there are within a statement
@@ -290,6 +360,23 @@ def get_statement_level(user_id):
     for i in tutoring_status_query['Items']:
         statement_level = (i['TutoringStatus']['StatementLevel'])
     return statement_level
+
+def get_max_statement_level():
+    """ Calculates and returns the max statement level from the
+    tutoring database. """
+
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+    tutor_table_dynamodb = dynamodb.Table('TutorTable')
+    projection_expression = "StatementLevel"
+    tutor_table = tutor_table_dynamodb.scan(
+        ProjectionExpression=projection_expression,
+    )
+    max_statement_level = 0
+    for item in tutor_table['Items']:
+        if item['StatementLevel'] > max_statement_level:
+            max_statement_level = item['StatementLevel']
+
+    return max_statement_level
 
 def get_tutoring_statement(statement_level, order_level):
     """ Returns a tutoring statement based on an input statement level and
@@ -661,6 +748,33 @@ def generate_true_false(question_level):
 
     return question_details
 
+def get_worst_attributes(user_id):
+    """ Returns the attributes the user has performed the worst on for feedback. """
+
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+    user_data_dynamodb = dynamodb.Table('LLPTutor_UserData')
+    response = user_data_dynamodb.query(KeyConditionExpression=Key('UserID')\
+        .eq(user_id))
+
+    worst_attributes = {}
+
+    for i in response['Items']:
+        incorrect_results = (i['CounterIncorrect'])
+
+    # Find the highest value of attributes a user has gotten wrong
+    most_attributes_wrong = 0
+    for key in incorrect_results:
+        if incorrect_results[key] > most_attributes_wrong:
+            most_attributes_wrong = incorrect_results[key]
+
+    # Search attribute records and get which attributes match with
+    # the previously calculated highest mistake count.
+    for key in incorrect_results:
+        if incorrect_results[key] == most_attributes_wrong:
+            worst_attributes[key] = most_attributes_wrong
+
+    return worst_attributes
+
 # --------------- Functions that control the skill's behavior ------------------
 
 def get_welcome_response(session):
@@ -689,8 +803,11 @@ def get_welcome_response(session):
     return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, reprompt_text, should_end_session))
 
-def handle_session_end_request():
+def handle_session_end_request(session):
     """ Ends the Alexa session when a user requests it. """
+    session_user = session.get('user', {})
+    user_id = session_user['userId']
+    reset_user(user_id)
 
     card_title = "Session Ended"
     speech_output = "<speak>" + "Thanks for trying out the Alexa PLC counter instruction tutor. " \
@@ -841,7 +958,7 @@ def check_answer_in_session(intent, session):
                 and (user_answer == "true"):
                 speech_output = (
                     "<speak>" + "True is correct. " +
-                    question_details["FullAnswer"] + '"<break time="2s"/>"' +
+                    question_details["FullAnswer"] + '"<break time="1.25s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
                 increment_question_correct(user_id, question_details["QuestionAttribute"])
@@ -849,7 +966,7 @@ def check_answer_in_session(intent, session):
                 and (user_answer == "false"):
                 speech_output = (
                     "<speak>" + "False is correct. " +
-                    question_details["FullAnswer"] + '"<break time="2s"/>"' +
+                    question_details["FullAnswer"] + '"<break time="1.25s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
                 increment_question_correct(user_id, question_details["QuestionAttribute"])
@@ -857,7 +974,7 @@ def check_answer_in_session(intent, session):
                 and (user_answer == "false"):
                 speech_output = (
                     "<speak>" + "Sorry, the correct answer is True. " +
-                    question_details["FullAnswer"] + '"<break time="2s"/>"' +
+                    question_details["FullAnswer"] + '"<break time="1.25s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
                 increment_question_incorrect(user_id, question_details["QuestionAttribute"])
@@ -865,7 +982,7 @@ def check_answer_in_session(intent, session):
                 and (user_answer == "true"):
                 speech_output = (
                     "<speak>" + "Sorry, the correct answer is False. " +
-                    question_details["FullAnswer"] + '"<break time="2s"/>"' +
+                    question_details["FullAnswer"] + '"<break time="1.25s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
                 increment_question_incorrect(user_id, question_details["QuestionAttribute"])
@@ -873,13 +990,13 @@ def check_answer_in_session(intent, session):
             if user_answer in question_details["Answer"]:
                 speech_output = (
                     "<speak>" + "Your answer is correct. " +
-                    user_answer + '"<break time="2s"/>"' +
+                    user_answer + '"<break time="1.25s"/>"' +
                     "Do you want another question?" + "</speak>"
                 )
             else:
                 speech_output = (
                     "<speak>" + "Your answer is incorrect. "
-                    + '"<break time="2s"/>"' + "Do you want another question?" + "</speak>"
+                    + '"<break time="1.25s"/>"' + "Do you want another question?" + "</speak>"
                 )
         reprompt_text = None
         should_end_session = False
@@ -901,6 +1018,31 @@ def check_answer_in_session(intent, session):
     return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, reprompt_text, should_end_session))
 
+def give_quiz_feedback(session):
+    card_title = "Question Feedback"
+    session_user = session.get('user', {})
+    user_id = session_user['userId']
+
+    worst_attributes = get_worst_attributes(user_id)
+
+    speech_output = "<speak>" + "You could work on: "
+    for key in worst_attributes:
+        speech_output += key + ", "
+    speech_output = speech_output.rstrip(", ")
+    speech_output += ". Do you want to review these?" + "</speak>"
+    reprompt_text = None
+
+    session_attributes = {
+        "CardTitle": card_title,
+        "SpeechOutput": speech_output,
+        "RepromptText": reprompt_text,
+        "CurrentStage": "GiveQuizFeedback",
+    }
+    should_end_session = False
+
+    return build_response(session_attributes, build_speechlet_response(
+        card_title, speech_output, reprompt_text, should_end_session))
+
 def handle_tutor_request(intent, session):
     """ Provides tutoring information output. """
 
@@ -911,8 +1053,11 @@ def handle_tutor_request(intent, session):
     current_statement_level = get_statement_level(user_id)
     current_order_level = get_order_level(user_id)
     max_order_level = get_max_order_levels(current_statement_level)
+    max_statement_level = get_max_statement_level()
 
-    if current_statement_level <= 4:
+    if current_statement_level <= max_statement_level:
+        # This if statement essentially loops through all the orders of
+        # a given level while a user keeps requesting it. 
         if current_order_level <= max_order_level:
             tutoring_statement = get_tutoring_statement(
                 current_statement_level,
@@ -920,35 +1065,51 @@ def handle_tutor_request(intent, session):
             )
             increment_order_level(user_id)
             speech_output = "<speak>" + '"<prosody rate="slow">"'
-            for index, statements in enumerate(tutoring_statement[0]):
-                speech_output += tutoring_statement[0][index] + " "
+            tutoring_statement_parts = tutoring_statement[0]
+            for index in range(len(tutoring_statement_parts)):
+                speech_output += tutoring_statement_parts[index] + " "
+            speech_output += '"<break time="1.25s"/>"'
+            speech_output += "Say next to go to the next statement."
             speech_output += "</prosody>" + "</speak>"
         else:
+            # If we've reached the max order, then we know we have to 
+            # move the statement level up by 1, so we do that and 
+            # reset the order to start from the beginning. 
             reset_order_level(user_id)
             increment_statement_level(user_id)
             current_statement_level = get_statement_level(user_id)
             current_order_level = get_order_level(user_id)
-            tutoring_statement = get_tutoring_statement(
-                current_statement_level, 
-                current_order_level
-            )
-            increment_order_level(user_id)
-            speech_output = "<speak>" + '"<prosody rate="slow">"'
-            for index, statements in enumerate(tutoring_statement[0]):
-                speech_output += tutoring_statement[0][index] + " "
-            speech_output += "</prosody>" + "</speak>"
-    else:
-        speech_output = (
-            "<speak>" + '"<prosody rate="slow">"' + "You've reached the end of the " +
-            "tutoring session. Great work! I can now quiz you if you say quiz me, " +
-            "or you can exit the program."  + "</prosody>" + "</speak>"
-        )
+            # This particular if statement is for checking if we've reached
+            # the max level, which signifies the end of the tutoring session
+            if current_statement_level <= max_statement_level:
+                if current_order_level <= max_order_level:
+                    tutoring_statement = get_tutoring_statement(
+                        current_statement_level,
+                        current_order_level
+                    )
+                    increment_order_level(user_id)
+                    speech_output = "<speak>" + '"<prosody rate="slow">"'
+                    tutoring_statement_parts = tutoring_statement[0]
+                    for index in range(len(tutoring_statement_parts)):
+                        speech_output += tutoring_statement_parts[index] + " "
+                    speech_output += '"<break time="1.25s"/>"'
+                    speech_output += "Say next to go to the next statement."
+                    speech_output += "</prosody>" + "</speak>"
+            else:
+                reset_statement_level(user_id)
+                reset_order_level(user_id)
+                speech_output = (
+                    "<speak>" + '"<prosody rate="slow">"' + "You've reached the end of the " +
+                    "tutoring session. Great work! I can now quiz you if you say quiz me, " +
+                    "or you can exit the program."  + "</prosody>" + "</speak>"
+                )
 
     reprompt_text = None
     session_attributes = {
         "CardTitle": card_title,
         "SpeechOutput": speech_output,
         "RepromptText": reprompt_text,
+        "CurrentStage": "Tutoring"
     }
     should_end_session = False
 
@@ -996,18 +1157,25 @@ def on_intent(intent_request, session):
         return handle_repeat_request(intent, session)
     elif intent_name == "AMAZON.StartOverIntent":
         return get_welcome_response(session)
+    elif intent_name == "AMAZON.NextIntent":
+        if session['attributes']['CurrentStage'] == "Tutoring":
+            return handle_tutor_request(intent, session)
     elif intent_name == "AMAZON.YesIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return get_question_from_session(intent, session)
         elif session['attributes']['CurrentStage'] == "HelpRequest":
             return get_question_from_session(intent, session)
+        elif session['attributes']['CurrentStage'] == "GiveQuizFeedback":
+            return handle_session_end_request(session)
     elif intent_name == "AMAZON.NoIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
-            return handle_session_end_request()
-        if session['attributes']['CurrentStage'] == "HelpRequest":
-            return handle_session_end_request()
+            return give_quiz_feedback(session)
+        elif session['attributes']['CurrentStage'] == "HelpRequest":
+            return handle_session_end_request(session)
+        elif session['attributes']['CurrentStage'] == "GiveQuizFeedback":
+            return handle_session_end_request(session)
     elif intent_name == "AMAZON.CancelIntent" or intent_name == "AMAZON.StopIntent":
-        return handle_session_end_request()
+        return handle_session_end_request(session)
     else:
         raise ValueError("Invalid intent")
 
