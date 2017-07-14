@@ -378,29 +378,44 @@ def get_max_statement_level():
 
     return max_statement_level
 
-def get_tutoring_statement(statement_level, order_level):
+def get_tutoring_statement(statement_level=1, order_level=1, attribute=None):
     """ Returns a tutoring statement based on an input statement level and
-    order level. """
+    order level, or input attribute. """
+    if attribute is None:
+        # Allow for filtering of questions for a requested level
+        filter_expression = Attr("StatementLevel").eq(statement_level)\
+            & Attr("OrderLevel").eq(order_level)
 
-    # Allow for filtering of questions for a requested level
-    filter_expression = Attr("StatementLevel").eq(statement_level)\
-        & Attr("OrderLevel").eq(order_level)
+        # List to store question details to be returned to caller function
+        statement_details = []
 
-    # List to store question details to be returned to caller function
-    statement_details = []
+        # Set up access to necessary databases from DynamoDB
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tutor_table_dynamodb = dynamodb.Table('TutorTable')
+        tutor_table = tutor_table_dynamodb.scan(
+            FilterExpression=filter_expression,
+        )
 
-    # Set up access to necessary databases from DynamoDB
-    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-    tutor_table_dynamodb = dynamodb.Table('TutorTable')
-    tutor_table = tutor_table_dynamodb.scan(
-        FilterExpression=filter_expression,
-    )
+        # Obtain question template components from database
+        for item in tutor_table['Items']:
+            statement_details = item['TutoringStatements']
 
-    # Obtain question template components from database
-    for item in tutor_table['Items']:
-        statement_details.append(item['TutoringStatements'])
+        return statement_details
+    else:
+        # List to store question details to be returned to caller function
+        statement_details = []
 
-    return statement_details
+        # Set up access to necessary databases from DynamoDB
+        dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+        tutor_table_dynamodb = dynamodb.Table('TutorTable')
+        tutoring_statement_query = tutor_table_dynamodb.query(KeyConditionExpression=Key('Attribute')\
+            .eq(attribute))
+
+        # Obtain question template components from database
+        for item in tutoring_statement_query['Items']:
+            statement_details = item['TutoringStatements']
+
+        return statement_details
 
 # --------------- Functions used for question generation and testing operations
 # ---------------
@@ -748,7 +763,7 @@ def generate_true_false(question_level):
 
     return question_details
 
-def get_worst_attributes(user_id):
+def get_attribute_feedback(user_id):
     """ Returns the attributes the user has performed the worst on for feedback. """
 
     dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
@@ -773,7 +788,17 @@ def get_worst_attributes(user_id):
         if incorrect_results[key] == most_attributes_wrong:
             worst_attributes[key] = most_attributes_wrong
 
-    return worst_attributes
+    # Get feedback statement for each attribute
+    feedback_statements = {}
+    user_data_dynamodb = dynamodb.Table('TutorTable')
+    for key in worst_attributes:
+        response = user_data_dynamodb.query(KeyConditionExpression=Key('Attribute')\
+            .eq(key))
+        for i in response['Items']:
+            feedback_statement = i['FeedbackStatement']
+        feedback_statements[key] = feedback_statement
+
+    return feedback_statements
 
 # --------------- Functions that control the skill's behavior ------------------
 
@@ -781,24 +806,25 @@ def get_welcome_response(session):
     """ Standard welcome response to the skill, normally said by Alexa if
     a user invokes the skill without an intent.
     """
+
     card_title = "Welcome"
     session_attributes = {}
     session_user = session.get('user', {})
     user_id = session_user['userId']
     if user_exists(user_id):
         speech_output = "Welcome back! " \
-                        "Please ask me a question by saying something like " \
-                        "quiz me, or give me a question."
+                        "I can either quiz you or tutor you. If you want questions" \
+                        "just say quiz me, or if you want tutoring, say teach me."
     else:
         add_user(user_id)
         speech_output = "Welcome to the PLC Counter Instruction Tutor! " \
-                        "Please ask me a question by saying something like " \
-                        "quiz me, or give me a question."
+                        "I can either quiz you or tutor you. If you want questions" \
+                        "just say quiz me, or if you want tutoring, say teach me."
 
     # If the user either does not reply to the welcome message or says something
     # that is not understood, they will be prompted again with this text.
-    reprompt_text = "Please ask me a question by saying something like, " \
-                    "quiz me, give me a question, or ask me a question."
+    reprompt_text = "I didn't quite get that. I can either quiz you or tutor you. " \
+                    "Which would you like me to do?"
     should_end_session = False
     return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, reprompt_text, should_end_session))
@@ -854,7 +880,7 @@ def handle_help_request(intent, session):
             "correct answer, which I will be able to recognize. "
             "Would you like another question?" + "</speak>"
         )
-    reprompt_text = None
+    reprompt_text = "I didn't quite get that; would you like another question?"
     session_attributes = {
         "CardTitle": card_title,
         "SpeechOutput": speech_output,
@@ -946,97 +972,129 @@ def check_answer_in_session(intent, session):
     session_user = session.get('user', {})
     user_id = session_user['userId']
 
-    # If a user's answer matches a slot value, depending on whether
-    # the user is responding to a True/False question or a SelectValue
-    # question, the user's answer is checked vs. the actual answer to the
-    # question and informed whether they are correct or incorrect.
-    if 'Answer' in intent['slots']:
-        user_answer = intent['slots']['Answer']['value']
-        question_details = session.get('attributes', {})
-        if question_details["QuestionType"] == "TrueFalse":
-            if (question_details["PartialAnswer"] == "true") \
-                and (user_answer == "true"):
-                speech_output = (
-                    "<speak>" + "True is correct. " +
-                    question_details["FullAnswer"] + '"<break time="1.25s"/>"' +
-                    "Do you want another question?" + "</speak>"
-                )
-                increment_question_correct(user_id, question_details["QuestionAttribute"])
-            elif (question_details["PartialAnswer"] == "false") \
-                and (user_answer == "false"):
-                speech_output = (
-                    "<speak>" + "False is correct. " +
-                    question_details["FullAnswer"] + '"<break time="1.25s"/>"' +
-                    "Do you want another question?" + "</speak>"
-                )
-                increment_question_correct(user_id, question_details["QuestionAttribute"])
-            elif (question_details["PartialAnswer"] == "true") \
-                and (user_answer == "false"):
-                speech_output = (
-                    "<speak>" + "Sorry, the correct answer is True. " +
-                    question_details["FullAnswer"] + '"<break time="1.25s"/>"' +
-                    "Do you want another question?" + "</speak>"
-                )
-                increment_question_incorrect(user_id, question_details["QuestionAttribute"])
-            elif (question_details["PartialAnswer"] == "false") \
-                and (user_answer == "true"):
-                speech_output = (
-                    "<speak>" + "Sorry, the correct answer is False. " +
-                    question_details["FullAnswer"] + '"<break time="1.25s"/>"' +
-                    "Do you want another question?" + "</speak>"
-                )
-                increment_question_incorrect(user_id, question_details["QuestionAttribute"])
-        elif question_details["QuestionType"] == "SelectValue":
-            if user_answer in question_details["Answer"]:
-                speech_output = (
-                    "<speak>" + "Your answer is correct. " +
-                    user_answer + '"<break time="1.25s"/>"' +
-                    "Do you want another question?" + "</speak>"
-                )
-            else:
-                speech_output = (
-                    "<speak>" + "Your answer is incorrect. "
-                    + '"<break time="1.25s"/>"' + "Do you want another question?" + "</speak>"
-                )
-        reprompt_text = None
-        should_end_session = False
-    else:
-        speech_output = (
-            "<speak>" + "I'm not sure what your answer is. Please try again." + "</speak>"
-        )
-        reprompt_text = "I'm not sure what your answer is. Please try again."
-        should_end_session = False
+    # Depending on whether the user is responding to a True/False
+    # question or a SelectValue question, the user's answer is checked
+    # vs. the actual answer to the question and informed whether
+    # they are correct or incorrect.
+    user_answer = intent['slots']['Answer']['value']
+    question_details = session.get('attributes', {})
+    if question_details["QuestionType"] == "TrueFalse":
+        if (question_details["PartialAnswer"] == "true") \
+            and (user_answer == "true"):
+            speech_output = (
+                "<speak>" + "True is correct. " +
+                question_details["FullAnswer"] + '"<break time="0.75s"/>"' +
+                "Would you like another question?" + "</speak>"
+            )
+            increment_question_correct(user_id, question_details["QuestionAttribute"])
+        elif (question_details["PartialAnswer"] == "false") \
+            and (user_answer == "false"):
+            speech_output = (
+                "<speak>" + "False is correct. " +
+                question_details["FullAnswer"] + '"<break time="0.75s"/>"' +
+                "Would you like another question?" + "</speak>"
+            )
+            increment_question_correct(user_id, question_details["QuestionAttribute"])
+        elif (question_details["PartialAnswer"] == "true") \
+            and (user_answer == "false"):
+            speech_output = (
+                "<speak>" + "Sorry, the correct answer is True. " +
+                question_details["FullAnswer"] + '"<break time="0.75s"/>"' +
+                "Would you like another question?" + "</speak>"
+            )
+            increment_question_incorrect(user_id, question_details["QuestionAttribute"])
+        elif (question_details["PartialAnswer"] == "false") \
+            and (user_answer == "true"):
+            speech_output = (
+                "<speak>" + "Sorry, the correct answer is False. " +
+                question_details["FullAnswer"] + '"<break time="0.75s"/>"' +
+                "Would you like another question?" + "</speak>"
+            )
+            increment_question_incorrect(user_id, question_details["QuestionAttribute"])
+    elif question_details["QuestionType"] == "SelectValue":
+        if user_answer in question_details["Answer"]:
+            speech_output = (
+                "<speak>" + "Your answer is correct. " +
+                user_answer + '"<break time="0.75s"/>"' +
+                "Would you like another question?" + "</speak>"
+            )
+        else:
+            speech_output = (
+                "<speak>" + "Your answer is incorrect. "
+                + '"<break time="0.75s"/>"' + "Would you like another question?" + "</speak>"
+            )
+    reprompt_text = "I didn't quite catch that. Can you repeat your answer?"
+    should_end_session = False
 
     session_attributes = {
         "CardTitle": card_title,
         "SpeechOutput": speech_output,
         "RepromptText": reprompt_text,
         "CurrentStage": "CheckAnswer",
-        "QuestionType": question_details["QuestionType"],
+        "QuestionType": question_details["QuestionType"]
     }
 
     return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, reprompt_text, should_end_session))
 
 def give_quiz_feedback(session):
-    card_title = "Question Feedback"
+    """ Provides feedback to the user after they finish a question session
+    in the form of telling them what attribute(s) of question they got
+    wrong the most, and asks if they want to review them. """
+
+    card_title = "Quiz Feedback"
     session_user = session.get('user', {})
     user_id = session_user['userId']
 
-    worst_attributes = get_worst_attributes(user_id)
+    feedback_statements = get_attribute_feedback(user_id)
 
-    speech_output = "<speak>" + "You could work on: "
-    for key in worst_attributes:
-        speech_output += key + ", "
-    speech_output = speech_output.rstrip(", ")
-    speech_output += ". Do you want to review these?" + "</speak>"
-    reprompt_text = None
+    speech_output = "<speak>" + "I think you should take a look at: "
+    for key in feedback_statements:
+        speech_output += feedback_statements[key] + ", and"
+    speech_output = speech_output.rstrip(", and")
+    speech_output += ". Would you like to review?" + "</speak>"
+
+    reprompt_text = "I didn't quite catch that. If you would like to review "\
+        + "say yes. If not, say no."
 
     session_attributes = {
         "CardTitle": card_title,
         "SpeechOutput": speech_output,
         "RepromptText": reprompt_text,
         "CurrentStage": "GiveQuizFeedback",
+        "QuizFeedback": feedback_statements
+    }
+    should_end_session = False
+
+    return build_response(session_attributes, build_speechlet_response(
+        card_title, speech_output, reprompt_text, should_end_session))
+
+def review_quiz_feedback(session):
+    """ Provides the user with review for the material they're the weakest on. """
+
+    card_title = "Quiz Review"
+
+    speech_output = "<speak>" + '"<prosody rate="slow">"'
+    feedback_statements = session['attributes']["QuizFeedback"]
+    print(feedback_statements)
+    for key in feedback_statements:
+        tutoring_statements = get_tutoring_statement(attribute=key)
+        print(tutoring_statements)
+        for index in range(len(tutoring_statements)):
+            speech_output += tutoring_statements[index] + " "
+    speech_output = speech_output.rstrip(" ")
+    speech_output += '"<break time="0.75s"/>"'
+    speech_output += ". Would you like me to quiz you, tutor you, or would you like to quit?"
+    speech_output += "</prosody>" + "</speak>"
+
+    reprompt_text = "I didn't quite get that. Would you like me to quiz you, "\
+        + "tutor you, or would you like to quit?"
+
+    session_attributes = {
+        "CardTitle": card_title,
+        "SpeechOutput": speech_output,
+        "RepromptText": reprompt_text,
+        "CurrentStage": "ReviewQuizFeedback"
     }
     should_end_session = False
 
@@ -1057,7 +1115,7 @@ def handle_tutor_request(intent, session):
 
     if current_statement_level <= max_statement_level:
         # This if statement essentially loops through all the orders of
-        # a given level while a user keeps requesting it. 
+        # a given level while a user keeps requesting it.
         if current_order_level <= max_order_level:
             tutoring_statement = get_tutoring_statement(
                 current_statement_level,
@@ -1065,16 +1123,17 @@ def handle_tutor_request(intent, session):
             )
             increment_order_level(user_id)
             speech_output = "<speak>" + '"<prosody rate="slow">"'
-            tutoring_statement_parts = tutoring_statement[0]
-            for index in range(len(tutoring_statement_parts)):
-                speech_output += tutoring_statement_parts[index] + " "
-            speech_output += '"<break time="1.25s"/>"'
+            for index in range(len(tutoring_statement)):
+                speech_output += tutoring_statement[index] + " "
+            speech_output += '"<break time="0.75s"/>"'
             speech_output += "Say next to go to the next statement."
             speech_output += "</prosody>" + "</speak>"
+            reprompt_text = "I didn't quite catch that. Say next to go to the "\
+                + "next tutoring statement."
         else:
-            # If we've reached the max order, then we know we have to 
-            # move the statement level up by 1, so we do that and 
-            # reset the order to start from the beginning. 
+            # If we've reached the max order, then we know we have to
+            # move the statement level up by 1, so we do that and
+            # reset the order to start from the beginning.
             reset_order_level(user_id)
             increment_statement_level(user_id)
             current_statement_level = get_statement_level(user_id)
@@ -1089,27 +1148,54 @@ def handle_tutor_request(intent, session):
                     )
                     increment_order_level(user_id)
                     speech_output = "<speak>" + '"<prosody rate="slow">"'
-                    tutoring_statement_parts = tutoring_statement[0]
-                    for index in range(len(tutoring_statement_parts)):
-                        speech_output += tutoring_statement_parts[index] + " "
-                    speech_output += '"<break time="1.25s"/>"'
+                    for index in range(len(tutoring_statement)):
+                        speech_output += tutoring_statement[index] + " "
+                    speech_output += '"<break time="0.75s"/>"'
                     speech_output += "Say next to go to the next statement."
                     speech_output += "</prosody>" + "</speak>"
+                    reprompt_text = "I didn't quite catch that. Say next to go to the "\
+                        + "next tutoring statement."
             else:
                 reset_statement_level(user_id)
                 reset_order_level(user_id)
                 speech_output = (
                     "<speak>" + '"<prosody rate="slow">"' + "You've reached the end of the " +
                     "tutoring session. Great work! I can now quiz you if you say quiz me, " +
-                    "or you can exit the program."  + "</prosody>" + "</speak>"
+                    "tutor you again if you say tutor me, or you can quit."  + "</prosody>" +
+                    "</speak>"
                 )
+                reprompt_text = "I didn't quite catch that. Would you like me to tutor you again, "\
+                    + "quiz you, or would you like to quit?"
 
-    reprompt_text = None
     session_attributes = {
         "CardTitle": card_title,
         "SpeechOutput": speech_output,
         "RepromptText": reprompt_text,
         "CurrentStage": "Tutoring"
+    }
+    should_end_session = False
+
+    return build_response(session_attributes, build_speechlet_response(
+        card_title, speech_output, reprompt_text, should_end_session))
+
+def get_options_menu():
+    """ A voice-based options menu. """
+
+    card_title = "What would you like to do?"
+
+    speech_output = (
+        "<speak> Would you like me to quiz you, tutor you, " +
+        "or would you like to quit? </speak>"
+    )
+
+    reprompt_text = "I didn't quite get that. Would you like me to quiz you, "\
+        + "tutor you, or would you like to quit?"
+
+    session_attributes = {
+        "CardTitle": card_title,
+        "SpeechOutput": speech_output,
+        "RepromptText": reprompt_text,
+        "CurrentStage": "OptionsMenu"
     }
     should_end_session = False
 
@@ -1123,7 +1209,6 @@ def on_session_started(session_started_request, session):
     print("on_session_started requestId=" + session_started_request['requestId']
           + ", sessionId=" + session['sessionId'])
 
-
 def on_launch(launch_request, session):
     """ Called when the user launches the skill without specifying what they
     want
@@ -1133,7 +1218,6 @@ def on_launch(launch_request, session):
           ", sessionId=" + session['sessionId'])
     # Dispatch to your skill's launch
     return get_welcome_response(session)
-
 
 def on_intent(intent_request, session):
     """ Called when the user specifies an intent for this skill """
@@ -1156,6 +1240,7 @@ def on_intent(intent_request, session):
     elif intent_name == "AMAZON.RepeatIntent":
         return handle_repeat_request(intent, session)
     elif intent_name == "AMAZON.StartOverIntent":
+        reset_user(session['user']['userId'])
         return get_welcome_response(session)
     elif intent_name == "AMAZON.NextIntent":
         if session['attributes']['CurrentStage'] == "Tutoring":
@@ -1166,17 +1251,18 @@ def on_intent(intent_request, session):
         elif session['attributes']['CurrentStage'] == "HelpRequest":
             return get_question_from_session(intent, session)
         elif session['attributes']['CurrentStage'] == "GiveQuizFeedback":
-            return handle_session_end_request(session)
+            return review_quiz_feedback(session)
     elif intent_name == "AMAZON.NoIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return give_quiz_feedback(session)
         elif session['attributes']['CurrentStage'] == "HelpRequest":
             return handle_session_end_request(session)
         elif session['attributes']['CurrentStage'] == "GiveQuizFeedback":
-            return handle_session_end_request(session)
+            return get_options_menu()
     elif intent_name == "AMAZON.CancelIntent" or intent_name == "AMAZON.StopIntent":
         return handle_session_end_request(session)
     else:
+        reset_user(session['user']['userId'])
         raise ValueError("Invalid intent")
 
 def on_session_ended(session_ended_request, session):
@@ -1187,7 +1273,7 @@ def on_session_ended(session_ended_request, session):
     print("on_session_ended requestId=" + session_ended_request['requestId'] +
           ", sessionId=" + session['sessionId'])
     # add cleanup logic here
-
+    reset_user(session['user']['userId'])
 
 # --------------- Main handler ------------------
 
