@@ -672,6 +672,81 @@ def generate_select_value():
 
     return question_details
 
+def generate_select_part(question_level):
+    """ Generates a random select part question. """
+
+    # Allow for filtering of questions for a requested level
+    filter_expression = Attr("Level").eq(question_level)
+
+    # List to store question details to be returned to caller function
+    question_details = []
+
+    # Store components of question templates
+    question_attributes = []
+    question_templates = []
+
+    # Keeps track of the total number of attributes.
+    # Useful since filtering for level leads to different available
+    # attributes based on the level of question requested.
+    total_attribute_num = 0
+
+    # Set up access to necessary databases from DynamoDB
+    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
+    select_part_table_dynamodb = dynamodb.Table('QuestionTemplate_SelectPart')
+    answer_table = dynamodb.Table('FactTable')
+    select_part_table = select_part_table_dynamodb.scan(
+        FilterExpression=filter_expression,
+    )
+
+    # Obtain question template components from database
+    for item in select_part_table['Items']:
+        question_attributes.append(item['Attribute'])
+        question_templates.append(item['SelectPart'])
+        total_attribute_num += 1
+
+    # Store possible output variables for output question
+    all_available_parts = ["CTU", "CTD"]
+    all_output_question_values = []
+    all_output_question_parts = []
+
+    # Randomly generate question's attribute, then get its respective output
+    # question template.
+    output_question_attribute_num = random.randint(0, total_attribute_num-1)
+    output_question_attribute = question_attributes[output_question_attribute_num]
+    output_question_template = question_templates[output_question_attribute_num]
+    question_details.append(output_question_attribute)
+
+    # Once attribute is generated, generate all possible values to go with attribute
+    # based on possible parts.
+    for part in all_available_parts:
+        value = answer_table.query(KeyConditionExpression=Key('Part & Attribute')\
+            .eq(part + " " + output_question_attribute))
+        if len(value['Items']) != 0:
+            for i in value['Items']:
+                all_output_question_values.append(i['Value'])
+                all_output_question_parts.append(part)
+
+    # Pick a part and the value that goes with it so that a question can be formed.
+    # For loop makes sure that if both CTD and CTU have the same value for the same
+    # attribute, then the final question answer is both, and not just one of CTD
+    # or CTU.
+    output_question_part_index = random.randint(0, len(all_output_question_parts)-1)
+    output_question_part = all_output_question_parts[output_question_part_index]
+    output_question_value = all_output_question_values[output_question_part_index]
+    output_question_answer = output_question_part
+    for index in range(0, len(all_output_question_values)-1):
+        if all_output_question_parts[index] != output_question_part\
+        and all_output_question_values[index] == output_question_value:
+            output_question_answer = "Both"
+
+    output_question = output_question_template.replace("<ATTRIBUTE>", output_question_attribute)\
+        .replace("<VALUE>", output_question_value)
+
+    question_details.append(output_question)
+    question_details.append(output_question_answer)
+
+    return question_details
+
 def generate_true_false(question_level):
     """ Generates a random true and false question, its answer, and returns
     the full details of the question to the caller function as a List.
@@ -782,21 +857,25 @@ def get_attribute_feedback(user_id):
         if incorrect_results[key] > most_attributes_wrong:
             most_attributes_wrong = incorrect_results[key]
 
-    # Search attribute records and get which attributes match with
-    # the previously calculated highest mistake count.
-    for key in incorrect_results:
-        if incorrect_results[key] == most_attributes_wrong:
-            worst_attributes[key] = most_attributes_wrong
-
-    # Get feedback statement for each attribute
     feedback_statements = {}
-    user_data_dynamodb = dynamodb.Table('TutorTable')
-    for key in worst_attributes:
-        response = user_data_dynamodb.query(KeyConditionExpression=Key('Attribute')\
-            .eq(key))
-        for i in response['Items']:
-            feedback_statement = i['FeedbackStatement']
-        feedback_statements[key] = feedback_statement
+    no_mistakes_feedback = ["Great job!", "Nice work!", "Well done!", "Nicely done!", "Great work!"]
+    if most_attributes_wrong == 0:
+        feedback_statements["None"] = random.choice(no_mistakes_feedback) + " You made no mistakes!"
+    else:
+        # Search attribute records and get which attributes match with
+        # the previously calculated highest mistake count.
+        for key in incorrect_results:
+            if incorrect_results[key] == most_attributes_wrong:
+                worst_attributes[key] = most_attributes_wrong
+
+        # Get feedback statement for each attribute
+        user_data_dynamodb = dynamodb.Table('TutorTable')
+        for key in worst_attributes:
+            response = user_data_dynamodb.query(KeyConditionExpression=Key('Attribute')\
+                .eq(key))
+            for i in response['Items']:
+                feedback_statement = i['FeedbackStatement']
+            feedback_statements[key] = feedback_statement
 
     return feedback_statements
 
@@ -812,14 +891,18 @@ def get_welcome_response(session):
     session_user = session.get('user', {})
     user_id = session_user['userId']
     if user_exists(user_id):
-        speech_output = "Welcome back! " \
-                        "I can either quiz you or tutor you. If you want questions" \
-                        "just say quiz me, or if you want tutoring, say teach me."
+        speech_output = (
+            "<speak>" + "Welcome back! " +
+            "I can either quiz you or tutor you. If you want questions " +
+            "just say quiz me, or if you want tutoring, say teach me." + "</speak>"
+        )
     else:
         add_user(user_id)
-        speech_output = "Welcome to the PLC Counter Instruction Tutor! " \
-                        "I can either quiz you or tutor you. If you want questions" \
-                        "just say quiz me, or if you want tutoring, say teach me."
+        speech_output = (
+            "<speak>" + "Welcome to the PLC Counter Instruction Tutor! " +
+            "I can either quiz you or tutor you. If you want questions " +
+            "just say quiz me, or if you want tutoring, say teach me." + "</speak>"
+        )
 
     # If the user either does not reply to the welcome message or says something
     # that is not understood, they will be prompted again with this text.
@@ -916,9 +999,13 @@ def get_question_from_session(intent, session):
         question_full = generate_true_false(current_user_level)
 
         card_title = "True or False Question"
+        #speech_output = (
+        #    "<speak>" + '"<prosody rate="slow">"' + "True or False? "
+        #    + question_full[1] + "</prosody>" + "</speak>"
+        #)
         speech_output = (
-            "<speak>" + '"<prosody rate="slow">"' + "True or False? "
-            + question_full[1] + "</prosody>" + "</speak>"
+            "<speak>" + "True or False? "
+            + question_full[1] + "</speak>"
         )
         reprompt_text = (
             "I didn't get your answer. Please reply True or "
@@ -938,12 +1025,37 @@ def get_question_from_session(intent, session):
         should_end_session = False
 
     elif question_type_num == 1:
+        question_full = generate_select_part(current_user_level)
+
+        card_title = "Select Part Question"
+        speech_output = (
+            "<speak>" + question_full[1]
+            + " Your options are: Counter Down (CTD), Counter Up (CTU), or both."
+            + "</speak>"
+        )
+        reprompt_text = (
+            "I didn't get your answer. Please reply either Counter Down (CTD), "
+            "Counter Up (CTU), or both."
+        )
+        session_attributes = {
+            "CardTitle": card_title,
+            "SpeechOutput": speech_output,
+            "RepromptText": reprompt_text,
+            "CurrentStage": "GenerateQuestion",
+            "QuestionType": "SelectPart",
+            "QuestionAttribute": question_full[0],
+            "Question": question_full[1],
+            "Answer": question_full[2],
+        }
+        should_end_session = False
+
+    elif question_type_num == 2:
         question_full = generate_select_value()
 
         card_title = "Short Answer Question"
         speech_output = (
-            "<speak>" + '"<prosody rate="slow">"' + question_full[0]
-            + "</prosody>" + "</speak>"
+            "<speak>" + question_full[0]
+            + "</speak>"
         )
         reprompt_text = (
             "I didn't get your answer. Please answer the following question: "
@@ -1011,6 +1123,35 @@ def check_answer_in_session(intent, session):
                 "Would you like another question?" + "</speak>"
             )
             increment_question_incorrect(user_id, question_details["QuestionAttribute"])
+    elif question_details["QuestionType"] == "SelectPart":
+        if (question_details['Answer'] == "CTU")\
+        and (user_answer == "counter up" or user_answer == "CTU"):
+            speech_output = (
+                "<speak> Counter Up is the correct answer. " + '"<break time="0.75s"/>"' +
+                "Would you like another question? </speak>"
+            )
+            increment_question_correct(user_id, question_details["QuestionAttribute"])
+        elif (question_details['Answer'] == "CTD")\
+        and (user_answer == "counter down" or user_answer == "CTD"):
+            speech_output = (
+                "<speak> Counter Down is the correct answer. " + '"<break time="0.75s"/>"' +
+                "Would you like another question? </speak>"
+            )
+            increment_question_correct(user_id, question_details["QuestionAttribute"])
+        elif (question_details['Answer'] == "Both")\
+        and (user_answer == "both" or user_answer == "both counter up and counter down"\
+            or user_answer == "both CTU and CTD"):
+            speech_output = (
+                "<speak> Both is the correct answer. " + '"<break time="0.75s"/>"' +
+                "Would you like another question? </speak>"
+            )
+            increment_question_correct(user_id, question_details["QuestionAttribute"])
+        else:
+            speech_output = (
+                "<speak>" + user_answer + " is incorrect." + '"<break time="0.75s"/>"' +
+                "Would you like another question? </speak>"
+            )
+            increment_question_incorrect(user_id, question_details["QuestionAttribute"])
     elif question_details["QuestionType"] == "SelectValue":
         if user_answer in question_details["Answer"]:
             speech_output = (
@@ -1047,15 +1188,23 @@ def give_quiz_feedback(session):
     user_id = session_user['userId']
 
     feedback_statements = get_attribute_feedback(user_id)
+    if "None" in feedback_statements:
+        speech_output = "<speak>" + feedback_statements["None"] + " "
+        speech_output += "If you want to be quizzed more, say quiz me; "
+        speech_output += "if you want to be tutored, say tutor me; "
+        speech_output += "if you want to quit, say 'I'm done.'" + "</speak>"
 
-    speech_output = "<speak>" + "I think you should take a look at: "
-    for key in feedback_statements:
-        speech_output += feedback_statements[key] + ", and"
-    speech_output = speech_output.rstrip(", and")
-    speech_output += ". Would you like to review?" + "</speak>"
+        reprompt_text = "I didn't quite get that. Would you like me to quiz you, "\
+        + "or tutor you? Or if you would like to quit, say 'I'm done.'"
+    else:
+        speech_output = "<speak>" + "I think you should take a look at: "
+        for key in feedback_statements:
+            speech_output += feedback_statements[key] + ", and "
+        speech_output = speech_output.rstrip(", and")
+        speech_output += ". Would you like to review?" + "</speak>"
 
-    reprompt_text = "I didn't quite catch that. If you would like to review "\
-        + "say yes. If not, say no."
+        reprompt_text = "I didn't quite catch that. If you would like to review "\
+            + "say yes. If not, say no."
 
     session_attributes = {
         "CardTitle": card_title,
@@ -1074,7 +1223,7 @@ def review_quiz_feedback(session):
 
     card_title = "Quiz Review"
 
-    speech_output = "<speak>" + '"<prosody rate="slow">"'
+    speech_output = "<speak>"
     feedback_statements = session['attributes']["QuizFeedback"]
     print(feedback_statements)
     for key in feedback_statements:
@@ -1084,11 +1233,12 @@ def review_quiz_feedback(session):
             speech_output += tutoring_statements[index] + " "
     speech_output = speech_output.rstrip(" ")
     speech_output += '"<break time="0.75s"/>"'
-    speech_output += ". Would you like me to quiz you, tutor you, or would you like to quit?"
-    speech_output += "</prosody>" + "</speak>"
+    speech_output += ". Would you like me to quiz you, or tutor you? "
+    speech_output += "Or if you would like to quit instead, say 'I'm done.'"
+    speech_output += "</speak>"
 
     reprompt_text = "I didn't quite get that. Would you like me to quiz you, "\
-        + "tutor you, or would you like to quit?"
+        + "or tutor you? Or if you would like to quit, say 'I'm done.'"
 
     session_attributes = {
         "CardTitle": card_title,
@@ -1122,12 +1272,12 @@ def handle_tutor_request(intent, session):
                 current_order_level
             )
             increment_order_level(user_id)
-            speech_output = "<speak>" + '"<prosody rate="slow">"'
+            speech_output = "<speak>"
             for index in range(len(tutoring_statement)):
                 speech_output += tutoring_statement[index] + " "
             speech_output += '"<break time="0.75s"/>"'
             speech_output += "Say next to go to the next statement."
-            speech_output += "</prosody>" + "</speak>"
+            speech_output += "</speak>"
             reprompt_text = "I didn't quite catch that. Say next to go to the "\
                 + "next tutoring statement."
         else:
@@ -1147,25 +1297,25 @@ def handle_tutor_request(intent, session):
                         current_order_level
                     )
                     increment_order_level(user_id)
-                    speech_output = "<speak>" + '"<prosody rate="slow">"'
+                    speech_output = "<speak>"
                     for index in range(len(tutoring_statement)):
                         speech_output += tutoring_statement[index] + " "
                     speech_output += '"<break time="0.75s"/>"'
                     speech_output += "Say next to go to the next statement."
-                    speech_output += "</prosody>" + "</speak>"
+                    speech_output += "</speak>"
                     reprompt_text = "I didn't quite catch that. Say next to go to the "\
                         + "next tutoring statement."
             else:
                 reset_statement_level(user_id)
                 reset_order_level(user_id)
                 speech_output = (
-                    "<speak>" + '"<prosody rate="slow">"' + "You've reached the end of the " +
+                    "<speak>" + "You've reached the end of the " +
                     "tutoring session. Great work! I can now quiz you if you say quiz me, " +
-                    "tutor you again if you say tutor me, or you can quit."  + "</prosody>" +
+                    "tutor you again if you say tutor me, or you can quit by saying 'I'm done.'" +
                     "</speak>"
                 )
                 reprompt_text = "I didn't quite catch that. Would you like me to tutor you again, "\
-                    + "quiz you, or would you like to quit?"
+                    + "or quiz you? If you want to quit instead, say 'I'm done.'"
 
     session_attributes = {
         "CardTitle": card_title,
@@ -1184,12 +1334,12 @@ def get_options_menu():
     card_title = "What would you like to do?"
 
     speech_output = (
-        "<speak> Would you like me to quiz you, tutor you, " +
-        "or would you like to quit? </speak>"
+        "<speak> Would you like me to quiz you, or tutor you? " +
+        "If you would like to quit, say 'I'm done'.</speak>"
     )
 
     reprompt_text = "I didn't quite get that. Would you like me to quiz you, "\
-        + "tutor you, or would you like to quit?"
+        + "or tutor you? If you would like to quit, say 'I'm done'."
 
     session_attributes = {
         "CardTitle": card_title,
