@@ -1006,7 +1006,7 @@ def handle_help_request(intent, session):
             "another question?" + "</speak>"
         )
         card_output = card_text_format(speech_output)
-    elif session_details["QuestionType"] == "SelectValue":
+    elif session_details["QuestionType"] == "SelectPart":
         speech_output = (
             "<speak>" + "For a short answer question, you need to reply with the "
             "correct answer, which I will be able to recognize. "
@@ -1375,11 +1375,18 @@ def handle_tutor_request(intent, session):
             for index in range(len(tutoring_statement)):
                 speech_output += tutoring_statement[index] + " "
             speech_output += '"<break time="0.75s"/>"'
-            speech_output += "Say next to go to the next statement."
+            if max_order_level - current_order_level == 0:
+                speech_output += "There are no statements left in this level. "
+                speech_output += "Say next to go to the next level of statement."
+                reprompt_text = "I didn't quite catch that. Say next to go to the "\
+                    + "next tutoring statement level."
+            else:
+                speech_output += "There are " + str(max_order_level-current_order_level) + " statements left. "
+                speech_output += "Say next to go to the next statement."
+                reprompt_text = "I didn't quite catch that. Say next to go to the "\
+                    + "next tutoring statement."
             speech_output += "</speak>"
             card_output = card_text_format(speech_output)
-            reprompt_text = "I didn't quite catch that. Say next to go to the "\
-                + "next tutoring statement."
         else:
             # If we've reached the max order, then we know we have to
             # move the statement level up by 1, so we do that and
@@ -1388,6 +1395,7 @@ def handle_tutor_request(intent, session):
             increment_statement_level(user_id)
             current_statement_level = get_statement_level(user_id)
             current_order_level = get_order_level(user_id)
+            max_order_level = get_max_order_levels(current_statement_level)
             # This particular if statement is for checking if we've reached
             # the max level, which signifies the end of the tutoring session
             if current_statement_level <= max_statement_level:
@@ -1401,11 +1409,18 @@ def handle_tutor_request(intent, session):
                     for index in range(len(tutoring_statement)):
                         speech_output += tutoring_statement[index] + " "
                     speech_output += '"<break time="0.75s"/>"'
-                    speech_output += "Say next to go to the next statement."
+                    if max_order_level - current_order_level == 0:
+                        speech_output += "There are no statements left in this level. "
+                        speech_output += "Say next to go to the next level of statement."
+                        reprompt_text = "I didn't quite catch that. Say next to go to the "\
+                            + "next tutoring statement level."
+                    else:
+                        speech_output += "There are " + str(max_order_level-current_order_level) + " statements left. "
+                        speech_output += "Say next to go to the next statement."
+                        reprompt_text = "I didn't quite catch that. Say next to go to the "\
+                            + "next tutoring statement."
                     speech_output += "</speak>"
                     card_output = card_text_format(speech_output)
-                    reprompt_text = "I didn't quite catch that. Say next to go to the "\
-                        + "next tutoring statement."
             else:
                 reset_statement_level(user_id)
                 reset_order_level(user_id)
