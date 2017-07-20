@@ -913,9 +913,10 @@ def card_text_format(speech_output):
     remove_words = [
         '<speak>',
         '</speak>',
-        '"<prosody rate="75%" pitch="high">"',
+        '"<prosody rate="90%" pitch="high">"',
         '</prosody>',
-        '"<break time="0.75s"/>"'
+        '"<break time="0.75s"/>"',
+        '"<prosody rate="90%">"'
     ]
 
     card_output = speech_output
@@ -961,7 +962,6 @@ def handle_session_end_request(session):
     """ Ends the Alexa session when a user requests it. """
     session_user = session.get('user', {})
     user_id = session_user['userId']
-    reset_user(user_id)
 
     card_title = "Session Ended"
     speech_output = "<speak>" + "Thanks for trying out the Alexa PLC counter instruction tutor. " \
@@ -1080,13 +1080,13 @@ def get_question_from_session(intent, session):
         card_title = "Select Part Question"
         speech_output = (
             "<speak>" + question_full[1]
-            + " Your options are: Counter Down, Counter Up, or both."
+            + " Your options are: CTD, CTU, or both."
             + "</speak>"
         )
         card_output = card_text_format(speech_output)
         reprompt_text = (
-            "I didn't get your answer. Please reply either Counter Down, "
-            "Counter Up, or both."
+            "I didn't get your answer. Please reply either CTD, "
+            "CTU, or both."
         )
         session_attributes = {
             "CardTitle": card_title,
@@ -1176,7 +1176,7 @@ def check_answer_in_session(intent, session):
         if (question_details["PartialAnswer"] == "true") \
             and (user_answer == "true"):
             speech_output = (
-                "<speak>" + '"<prosody rate="75%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
                 "</prosody>" + " True is correct. " +
                 question_details["FullAnswer"] + '"<break time="0.75s"/>" ' +
                 random.choice(more_question_responses) + "</speak>"
@@ -1186,7 +1186,7 @@ def check_answer_in_session(intent, session):
         elif (question_details["PartialAnswer"] == "false") \
             and (user_answer == "false"):
             speech_output = (
-                "<speak>" + '"<prosody rate="75%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
                 "</prosody>" + " False is correct. " +
                 question_details["FullAnswer"] + '"<break time="0.75s"/>" ' +
                 random.choice(more_question_responses) + "</speak>"
@@ -1196,8 +1196,8 @@ def check_answer_in_session(intent, session):
         elif (question_details["PartialAnswer"] == "true") \
             and (user_answer == "false"):
             speech_output = (
-                "<speak>" + '"<prosody rate="75%">"' + "Sorry, the correct answer is True. " +
-                question_details["FullAnswer"] + '"<break time="0.75s"/>" ' + "</prosody>" +
+                "<speak>" + "Sorry, the correct answer is True. " +
+                question_details["FullAnswer"] + "</prosody>" +
                 random.choice(more_question_responses) + "</speak>"
             )
             card_output = card_text_format(speech_output)
@@ -1205,8 +1205,8 @@ def check_answer_in_session(intent, session):
         elif (question_details["PartialAnswer"] == "false") \
             and (user_answer == "true"):
             speech_output = (
-                "<speak>" + '"<prosody rate="75%">"' + "Sorry, the correct answer is False. " +
-                question_details["FullAnswer"] + '"<break time="0.75s"/>" ' + "</prosody>" +
+                "<speak>" + "Sorry, the correct answer is False. " +
+                question_details["FullAnswer"] + "</prosody>" +
                 random.choice(more_question_responses) + "</speak>"
             )
             card_output = card_text_format(speech_output)
@@ -1216,8 +1216,8 @@ def check_answer_in_session(intent, session):
         if (question_details['Answer'] == "CTU")\
         and (user_answer == "counter up" or user_answer == "CTU"):
             speech_output = (
-                "<speak>" + '"<prosody rate="75%" pitch="high">"'+ random.choice(positive_feedback_responses) +
-                "</prosody>" + " Counter Up is the correct answer. " + '"<break time="0.75s"/>"' +
+                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                "</prosody>" + " CTU is the correct answer. " + '"<break time="0.75s"/>"' +
                 "Would you like another question? </speak>"
             )
             card_output = card_text_format(speech_output)
@@ -1225,8 +1225,8 @@ def check_answer_in_session(intent, session):
         elif (question_details['Answer'] == "CTD")\
         and (user_answer == "counter down" or user_answer == "CTD"):
             speech_output = (
-                "<speak>" + '"<prosody rate="75%" pitch="high">"'+ random.choice(positive_feedback_responses) +
-                "</prosody>" + " Counter Down is the correct answer. " + '"<break time="0.75s"/>"' +
+                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                "</prosody>" + " CTD is the correct answer. " + '"<break time="0.75s"/>"' +
                 "Would you like another question? </speak>"
             )
             card_output = card_text_format(speech_output)
@@ -1235,7 +1235,7 @@ def check_answer_in_session(intent, session):
         and (user_answer == "both" or user_answer == "both counter up and counter down"\
             or user_answer == "both CTUandC TD"):
             speech_output = (
-                "<speak>" + '"<prosody rate="75%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
                 "</prosody>" + " Both is the correct answer. " + '"<break time="0.75s"/>"' +
                 "Would you like another question? </speak>"
             )
@@ -1243,8 +1243,8 @@ def check_answer_in_session(intent, session):
             increment_question_correct(user_id, question_details["QuestionAttribute"])
         else:
             speech_output = (
-                "<speak>" + '"<prosody rate="75%">"' + "Sorry, your answer is incorrect. " + '"<break time="0.75s"/>"' +
-                " The correct answer was " + question_details['Answer'] + ". " + "</prosody>" +
+                "<speak>" + "Sorry, your answer is incorrect. " + '"<break time="0.75s"/>"' +
+                " The correct answer was " + question_details['Answer'] + ". " +
                 "Would you like another question? </speak>"
             )
             card_output = card_text_format(speech_output)
@@ -1289,12 +1289,12 @@ def give_quiz_feedback(session):
     feedback_statements = get_attribute_feedback(user_id)
     if "None" in feedback_statements:
         speech_output = "<speak>" + feedback_statements["None"] + " "
-        speech_output += "If you want to be quizzed more, say quiz me; "
-        speech_output += "if you want to be tutored, say tutor me; "
-        speech_output += "if you want to quit, say 'I'm done.'" + "</speak>"
+        speech_output += "Would you like me to quiz you again, "
+        speech_output += "tutor you, or would you like to end this study session? "
+        speech_output += "</speak>"
         card_output = card_text_format(speech_output)
         reprompt_text = "I didn't quite get that. Would you like me to quiz you, "\
-        + "or tutor you? Or if you would like to quit, say 'I'm done.'"
+        + "tutor you, or would you like to end this study session?"
     else:
         speech_output = "<speak>" + "I think you should take a look at: "
         for key in feedback_statements:
@@ -1302,8 +1302,7 @@ def give_quiz_feedback(session):
         speech_output = speech_output.rstrip(", and")
         speech_output += ". Would you like to review?" + "</speak>"
         card_output = card_text_format(speech_output)
-        reprompt_text = "I didn't quite catch that. If you would like to review "\
-            + "say yes. If not, say no."
+        reprompt_text = "I didn't quite catch that. Would you like to review?"
 
     session_attributes = {
         "CardTitle": card_title,
@@ -1332,12 +1331,12 @@ def review_quiz_feedback(session):
             speech_output += tutoring_statements[index] + " "
     speech_output = speech_output.rstrip(" ")
     speech_output += '"<break time="0.75s"/>"'
-    speech_output += ". Would you like me to quiz you, or tutor you? "
-    speech_output += "Or if you would like to quit instead, say 'I'm done.'"
+    speech_output += "Would you like me to quiz you again, "
+    speech_output += "tutor you, or would you like to end this study session? "
     speech_output += "</speak>"
     card_output = card_text_format(speech_output)
     reprompt_text = "I didn't quite get that. Would you like me to quiz you, "\
-        + "or tutor you? Or if you would like to quit, say 'I'm done.'"
+        + "tutor you, or would you like to end this study session?"
 
     session_attributes = {
         "CardTitle": card_title,
@@ -1357,6 +1356,11 @@ def handle_tutor_request(intent, session):
     session_user = session.get('user', {})
     user_id = session_user['userId']
 
+    tutoring_intro = [
+        "Let's begin!",
+        "Let's get started!"
+    ]
+
     current_statement_level = get_statement_level(user_id)
     current_order_level = get_order_level(user_id)
     max_order_level = get_max_order_levels(current_statement_level)
@@ -1372,19 +1376,21 @@ def handle_tutor_request(intent, session):
             )
             increment_order_level(user_id)
             speech_output = "<speak>"
+            if current_statement_level == 1 and current_order_level == 1:
+                speech_output += random.choice(tutoring_intro) + " "
             for index in range(len(tutoring_statement)):
                 speech_output += tutoring_statement[index] + " "
             speech_output += '"<break time="0.75s"/>"'
             if max_order_level - current_order_level == 0:
                 speech_output += "There are no statements left in this level. "
-                speech_output += "Say next to go to the next level of statement."
-                reprompt_text = "I didn't quite catch that. Say next to go to the "\
-                    + "next tutoring statement level."
+                speech_output += "Would you like me to go to the next statement level, or repeat this statement?"
+                reprompt_text = "I didn't quite catch that. Would you like me "\
+                    + "to go to the next tutoring statement level, or repeat this statement?"
             else:
                 speech_output += "There are " + str(max_order_level-current_order_level) + " statements left. "
-                speech_output += "Say next to go to the next statement."
-                reprompt_text = "I didn't quite catch that. Say next to go to the "\
-                    + "next tutoring statement."
+                speech_output += "Would you like me to go to the next statement, or repeat this statement?"
+                reprompt_text = "I didn't quite catch that. Would you like me to go to the "\
+                    + "next tutoring statement, or repeat this statement?"
             speech_output += "</speak>"
             card_output = card_text_format(speech_output)
         else:
@@ -1411,28 +1417,27 @@ def handle_tutor_request(intent, session):
                     speech_output += '"<break time="0.75s"/>"'
                     if max_order_level - current_order_level == 0:
                         speech_output += "There are no statements left in this level. "
-                        speech_output += "Say next to go to the next level of statement."
-                        reprompt_text = "I didn't quite catch that. Say next to go to the "\
-                            + "next tutoring statement level."
+                        speech_output += "Would you like me to go to the next statement level, or repeat this statement?"
+                        reprompt_text = "I didn't quite catch that. Would you like me "\
+                            + "to go to the next tutoring statement level, or repeat this statement?"
                     else:
                         speech_output += "There are " + str(max_order_level-current_order_level) + " statements left. "
-                        speech_output += "Say next to go to the next statement."
-                        reprompt_text = "I didn't quite catch that. Say next to go to the "\
-                            + "next tutoring statement."
+                        speech_output += "Would you like me to go to the next statement, or repeat this statement?"
+                        reprompt_text = "I didn't quite catch that. Would you like me to go to the "\
+                            + "next tutoring statement, or repeat this statement?"
                     speech_output += "</speak>"
                     card_output = card_text_format(speech_output)
             else:
                 reset_statement_level(user_id)
                 reset_order_level(user_id)
                 speech_output = (
-                    "<speak>" + "You've reached the end of the " +
-                    "tutoring session. Great work! I can now quiz you if you say quiz me, " +
-                    "tutor you again if you say tutor me, or you can quit by saying 'I'm done.'" +
+                    "<speak>" + "You've reached the end of the tutoring session. Great work! " +
+                    "Would you like me to quiz you now, tutor you again, or would you like to end this study session?" +
                     "</speak>"
                 )
                 card_output = card_text_format(speech_output)
                 reprompt_text = "I didn't quite catch that. Would you like me to tutor you again, "\
-                    + "or quiz you? If you want to quit instead, say 'I'm done.'"
+                    + ", quiz you, or would you like to end this study session?"
 
     session_attributes = {
         "CardTitle": card_title,
@@ -1451,12 +1456,12 @@ def get_options_menu():
     card_title = "What would you like to do?"
 
     speech_output = (
-        "<speak> Would you like me to quiz you, or tutor you? " +
-        "If you would like to quit, say 'I'm done'.</speak>"
+        "<speak> Would you like me to quiz you, tutor you, " +
+        "or would you like to end this study session? </speak>"
     )
     card_output = card_text_format(speech_output)
     reprompt_text = "I didn't quite get that. Would you like me to quiz you, "\
-        + "or tutor you? If you would like to quit, say 'I'm done'."
+        + "tutor you, or do you want to end this study session?"
 
     session_attributes = {
         "CardTitle": card_title,
@@ -1468,6 +1473,14 @@ def get_options_menu():
 
     return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, card_output, reprompt_text, should_end_session))
+
+def handle_dont_know(session):
+    session_user = session.get('user', {})
+    user_id = session_user['userId']
+
+    question_details = session.get('attributes', {})
+    increment_question_incorrect(user_id, question_details["QuestionAttribute"])
+
 # --------------- Events ------------------
 
 def on_session_started(session_started_request, session):
@@ -1512,6 +1525,10 @@ def on_intent(intent_request, session):
     elif intent_name == "AMAZON.NextIntent":
         if session['attributes']['CurrentStage'] == "Tutoring":
             return handle_tutor_request(intent, session)
+    elif intent_name == "DontKnowIntent":
+        if session['attributes']['CurrentStage'] == "GenerateQuestion":
+            handle_dont_know(session)
+            return get_question_from_session(intent, session)
     elif intent_name == "AMAZON.YesIntent":
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return get_question_from_session(intent, session)
