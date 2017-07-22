@@ -937,16 +937,14 @@ def get_welcome_response(session):
     if user_exists(user_id):
         speech_output = (
             "<speak>" + "Welcome back! " +
-            "I can either quiz you or tutor you. If you want questions " +
-            "just say quiz me, or if you want tutoring, say teach me." + "</speak>"
+            "Would you like me to quiz you, or tutor you? " + "</speak>"
         )
         card_output = card_text_format(speech_output)
     else:
         add_user(user_id)
         speech_output = (
             "<speak>" + "Welcome to the PLC Counter Instruction Tutor! " +
-            "I can either quiz you or tutor you. If you want questions " +
-            "just say quiz me, or if you want tutoring, say teach me." + "</speak>"
+            "Would you like me to quiz you, or tutor you?" + "</speak>"
         )
         card_output = card_text_format(speech_output)
 
@@ -1546,7 +1544,6 @@ def on_intent(intent_request, session):
     elif intent_name == "AMAZON.CancelIntent" or intent_name == "AMAZON.StopIntent":
         return handle_session_end_request(session)
     else:
-        reset_user(session['user']['userId'])
         raise ValueError("Invalid intent")
 
 def on_session_ended(session_ended_request, session):
@@ -1557,7 +1554,6 @@ def on_session_ended(session_ended_request, session):
     print("on_session_ended requestId=" + session_ended_request['requestId'] +
           ", sessionId=" + session['sessionId'])
     # add cleanup logic here
-    reset_user(session['user']['userId'])
 
 # --------------- Main handler ------------------
 
