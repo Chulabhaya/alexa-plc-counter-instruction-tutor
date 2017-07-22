@@ -931,7 +931,9 @@ def get_welcome_response(session):
     """
 
     card_title = "Welcome"
-    session_attributes = {}
+    session_attributes = {
+        "CurrentStage": "WelcomeResponse",
+    }
     session_user = session.get('user', {})
     user_id = session_user['userId']
     if user_exists(user_id):
@@ -958,11 +960,9 @@ def get_welcome_response(session):
 
 def handle_session_end_request(session):
     """ Ends the Alexa session when a user requests it. """
-    session_user = session.get('user', {})
-    user_id = session_user['userId']
 
     card_title = "Session Ended"
-    speech_output = "<speak>" + "Thanks for trying out the Alexa PLC counter instruction tutor. " \
+    speech_output = "<speak>" + "Thanks for trying out the PLC Counter Instruction Tutor. " \
                     "Have a nice day!" + "</speak>"
     card_output = card_text_format(speech_output)
 
@@ -995,23 +995,75 @@ def handle_help_request(intent, session):
     card_title = "Help"
 
     # Depending on the current stage of the interaction, a different
-    # help response is provided to the user.
+    # help response is provided to the user. 
+    # Note to me: Improve these help responses in the future
     session_details = session.get('attributes', {})
-    if session_details["QuestionType"] == "TrueFalse":
+    if session_details["CurrentStage"] == "WelcomeResponse":
         speech_output = (
-            "<speak>" + "For a true or false question, you simply need to reply "
-            "with either the word true, or the word false. Would you like "
-            "another question?" + "</speak>"
+            "<speak>" + "Welcome to PLC Counter Instruction Tutor. " +
+            "I can either quiz you or tutor you. I recommend that " +
+            "you start off with tutoring to go over the material, " +
+            "and then test yourself with some questions." + '"<break time="0.75s"/>"' + 
+            "Would you like me to tutor you or quiz you?" + "</speak>"
         )
         card_output = card_text_format(speech_output)
-    elif session_details["QuestionType"] == "SelectPart":
+    elif session_details["CurrentStage"] == "GenerateQuestion":
+        if session_details["QuestionType"] == "TrueFalse":
+            speech_output = (
+                "<speak>" + "For a true or false question, you need to reply " +
+                "with either true, or false. Would you like another question?" + "</speak>"
+            )
+            card_output = card_text_format(speech_output)
+        elif session_details["QuestionType"] == "SelectPart":
+            speech_output = (
+                "<speak>" + "For a select instruction question, you need to reply with " +
+                "one of the provided answer choices. Would you like another question?" + "</speak>"
+            )
+            card_output = card_text_format(speech_output)
+    elif session_details["CurrentStage"] == "CheckAnswer":
+        if session_details["QuestionType"] == "TrueFalse":
+            speech_output = (
+                "<speak>" + "For a true or false question, you need to reply " +
+                "with either true, or false. Would you like another question?" + "</speak>"
+            )
+            card_output = card_text_format(speech_output)
+        elif session_details["QuestionType"] == "SelectPart":
+            speech_output = (
+                "<speak>" + "For a select instruction question, you need to reply with " +
+                "one of the provided answer choices. Would you like another question?" + "</speak>"
+            )
+            card_output = card_text_format(speech_output)
+    elif session_details["CurrentStage"] == "GiveQuizFeedback":
         speech_output = (
-            "<speak>" + "For a short answer question, you need to reply with the "
-            "correct answer, which I will be able to recognize. "
-            "Would you like another question?" + "</speak>"
+            "<speak>" + "The feedback stage is to help you improve on your weakest " +
+            "areas. " + '"<break time="0.75s"/>"' + "Would you like me to tutor you, " +
+            "quiz you again, or would you like to end this study session?" + "</speak>"
         )
-        card_output = card_text_format(speech_output)
-    reprompt_text = "I didn't quite get that; would you like another question?"
+        card_output = card_text_format(speech_output)    
+    elif session_details["CurrentStage"] == "ReviewQuizFeedback":
+        speech_output = (
+            "<speak>" + "The feedback stage is to help you improve on your weakest " +
+            "areas. " + '"<break time="0.75s"/>"' + "Would you like me to tutor you, " +
+            "quiz you again, or would you like to end this study session?" + "</speak>"
+        )
+        card_output = card_text_format(speech_output)      
+    elif session_details["CurrentStage"] == "Tutoring":
+        speech_output = (
+            "<speak>" + "During the tutoring stage I go over the basics of counter " +
+            "instructions in PLC ladder logic programming. " + '"<break time="0.75s"/>"' + 
+            "Would you like to return to tutoring, for me to quiz you, or would " +
+            "you like to end this study session?" + "</speak>"
+        )
+        card_output = card_text_format(speech_output)  
+    elif session_details["CurrentStage"] == "OptionsMenu":
+        speech_output = (
+            "<speak>" + "I can either quiz you or tutor you about counter " +
+            "instructions in PLC ladder logic programming. " + '"<break time="0.75s"/>"' + 
+            "Would you like me to tutor you, quiz you, or would " +
+            "you like to end this study session?" + "</speak>"
+        )
+        card_output = card_text_format(speech_output)         
+    reprompt_text = "I didn't quite get that; what would you like to do?"
     session_attributes = {
         "CardTitle": card_title,
         "SpeechOutput": speech_output,
@@ -1078,7 +1130,7 @@ def get_question_from_session(intent, session):
         card_title = "Select Part Question"
         speech_output = (
             "<speak>" + question_full[1]
-            + " Your options are: CTD, CTU, or both."
+            + " Is this CTU, CTD, or both?"
             + "</speak>"
         )
         card_output = card_text_format(speech_output)
@@ -1171,82 +1223,120 @@ def check_answer_in_session(intent, session):
     user_answer = intent['slots']['Answer']['value']
     question_details = session.get('attributes', {})
     if question_details["QuestionType"] == "TrueFalse":
-        if (question_details["PartialAnswer"] == "true") \
-            and (user_answer == "true"):
+        if user_answer == "true" or user_answer == "false":
+            if (question_details["PartialAnswer"] == "true") \
+                and (user_answer == "true"):
+                speech_output = (
+                    "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                    "</prosody>" + " True is correct. " +
+                    question_details["FullAnswer"] + '"<break time="0.75s"/>"' +
+                    random.choice(more_question_responses) + "</speak>"
+                )
+                card_output = card_text_format(speech_output)
+                increment_question_correct(user_id, question_details["QuestionAttribute"])
+            elif (question_details["PartialAnswer"] == "false") \
+                and (user_answer == "false"):
+                speech_output = (
+                    "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                    "</prosody>" + " False is correct. " +
+                    question_details["FullAnswer"] + '"<break time="0.75s"/>"' +
+                    random.choice(more_question_responses) + "</speak>"
+                )
+                card_output = card_text_format(speech_output)
+                increment_question_correct(user_id, question_details["QuestionAttribute"])
+            elif (question_details["PartialAnswer"] == "true") \
+                and (user_answer == "false"):
+                speech_output = (
+                    "<speak>" + "Sorry, the correct answer is True. " +
+                    question_details["FullAnswer"] + " " +
+                    random.choice(more_question_responses) + "</speak>"
+                )
+                card_output = card_text_format(speech_output)
+                increment_question_incorrect(user_id, question_details["QuestionAttribute"])
+            elif (question_details["PartialAnswer"] == "false") \
+                and (user_answer == "true"):
+                speech_output = (
+                    "<speak>" + "Sorry, the correct answer is False. " +
+                    question_details["FullAnswer"] + " " +
+                    random.choice(more_question_responses) + "</speak>"
+                )
+                card_output = card_text_format(speech_output)
+                increment_question_incorrect(user_id, question_details["QuestionAttribute"])
+        elif user_answer is None:
             speech_output = (
-                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
-                "</prosody>" + " True is correct. " +
-                question_details["FullAnswer"] + '"<break time="0.75s"/>" ' +
-                random.choice(more_question_responses) + "</speak>"
-            )
-            card_output = card_text_format(speech_output)
-            increment_question_correct(user_id, question_details["QuestionAttribute"])
-        elif (question_details["PartialAnswer"] == "false") \
-            and (user_answer == "false"):
-            speech_output = (
-                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
-                "</prosody>" + " False is correct. " +
-                question_details["FullAnswer"] + '"<break time="0.75s"/>" ' +
-                random.choice(more_question_responses) + "</speak>"
-            )
-            card_output = card_text_format(speech_output)
-            increment_question_correct(user_id, question_details["QuestionAttribute"])
-        elif (question_details["PartialAnswer"] == "true") \
-            and (user_answer == "false"):
-            speech_output = (
-                "<speak>" + "Sorry, the correct answer is True. " +
-                question_details["FullAnswer"] + "</prosody>" +
-                random.choice(more_question_responses) + "</speak>"
-            )
-            card_output = card_text_format(speech_output)
-            increment_question_incorrect(user_id, question_details["QuestionAttribute"])
-        elif (question_details["PartialAnswer"] == "false") \
-            and (user_answer == "true"):
-            speech_output = (
-                "<speak>" + "Sorry, the correct answer is False. " +
-                question_details["FullAnswer"] + "</prosody>" +
-                random.choice(more_question_responses) + "</speak>"
-            )
-            card_output = card_text_format(speech_output)
-            increment_question_incorrect(user_id, question_details["QuestionAttribute"])
-    elif question_details["QuestionType"] == "SelectPart":
-        user_answer = user_answer.replace("&", "and")
-        if (question_details['Answer'] == "CTU")\
-        and (user_answer == "counter up" or user_answer == "CTU"):
-            speech_output = (
-                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
-                "</prosody>" + " CTU is the correct answer. " + '"<break time="0.75s"/>"' +
+                "<speak>" + "Sorry, your answer is invalid. For a true or false question, " +
+                "please make sure your answer is either true or false. " + '"<break time="0.75s"/>"' +
                 "Would you like another question? </speak>"
             )
             card_output = card_text_format(speech_output)
-            increment_question_correct(user_id, question_details["QuestionAttribute"])
-        elif (question_details['Answer'] == "CTD")\
-        and (user_answer == "counter down" or user_answer == "CTD"):
-            speech_output = (
-                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
-                "</prosody>" + " CTD is the correct answer. " + '"<break time="0.75s"/>"' +
-                "Would you like another question? </speak>"
-            )
-            card_output = card_text_format(speech_output)
-            increment_question_correct(user_id, question_details["QuestionAttribute"])
-        elif (question_details['Answer'] == "Both")\
-        and (user_answer == "both" or user_answer == "both counter up and counter down"\
-            or user_answer == "both CTUandC TD"):
-            speech_output = (
-                "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
-                "</prosody>" + " Both is the correct answer. " + '"<break time="0.75s"/>"' +
-                "Would you like another question? </speak>"
-            )
-            card_output = card_text_format(speech_output)
-            increment_question_correct(user_id, question_details["QuestionAttribute"])
         else:
             speech_output = (
-                "<speak>" + "Sorry, your answer is incorrect. " + '"<break time="0.75s"/>"' +
-                " The correct answer was " + question_details['Answer'] + ". " +
+                "<speak>" + "Sorry, your answer is invalid. For a true or false question, " +
+                "please make sure your answer is either true or false. " + '"<break time="0.75s"/>"' +
                 "Would you like another question? </speak>"
             )
             card_output = card_text_format(speech_output)
-            increment_question_incorrect(user_id, question_details["QuestionAttribute"])
+    elif question_details["QuestionType"] == "SelectPart":
+        user_answer = user_answer.replace("&", "and")
+        if (
+                user_answer == "counter up" or
+                user_answer == "CTU" or
+                user_answer == "counter down" or
+                user_answer == "CTD" or
+                user_answer == "both" or
+                user_answer == "both counter up and counter down" or
+                user_answer == "both CTUandC TD"
+        ):
+            if (question_details['Answer'] == "CTU")\
+            and (user_answer == "counter up" or user_answer == "CTU"):
+                speech_output = (
+                    "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                    "</prosody>" + " CTU is the correct answer. " + '"<break time="0.75s"/>"' +
+                    "Would you like another question? </speak>"
+                )
+                card_output = card_text_format(speech_output)
+                increment_question_correct(user_id, question_details["QuestionAttribute"])
+            elif (question_details['Answer'] == "CTD")\
+            and (user_answer == "counter down" or user_answer == "CTD"):
+                speech_output = (
+                    "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                    "</prosody>" + " CTD is the correct answer. " + '"<break time="0.75s"/>"' +
+                    "Would you like another question? </speak>"
+                )
+                card_output = card_text_format(speech_output)
+                increment_question_correct(user_id, question_details["QuestionAttribute"])
+            elif (question_details['Answer'] == "Both")\
+            and (user_answer == "both" or user_answer == "both counter up and counter down"\
+                or user_answer == "both CTUandC TD"):
+                speech_output = (
+                    "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
+                    "</prosody>" + " Both is the correct answer. " + '"<break time="0.75s"/>"' +
+                    "Would you like another question? </speak>"
+                )
+                card_output = card_text_format(speech_output)
+                increment_question_correct(user_id, question_details["QuestionAttribute"])
+            else:
+                speech_output = (
+                    "<speak>" + "Sorry, your answer is incorrect. " + '"<break time="0.75s"/>"' +
+                    " The correct answer is " + question_details['Answer'] + ". " +
+                    "Would you like another question? </speak>"
+                )
+                card_output = card_text_format(speech_output)
+                increment_question_incorrect(user_id, question_details["QuestionAttribute"])
+        elif user_answer is None:
+            speech_output = (
+                "<speak>" + "Sorry, your answer is invalid. Please make sure to pick one of the " +
+                "listed options for a select instruction question. " + '"<break time="0.75s"/>"' +
+                "Would you like another question? </speak>"
+            )
+            card_output = card_text_format(speech_output)
+        else:
+            speech_output = (
+                "<speak>" + "Sorry, your answer is invalid. Please make sure to pick one of the " +
+                "listed options for a select instruction question. " + '"<break time="0.75s"/>"' +
+                "Would you like another question? </speak>"
+            )
+            card_output = card_text_format(speech_output)
     elif question_details["QuestionType"] == "SelectValue":
         if user_answer in question_details["Answer"]:
             speech_output = (
@@ -1538,7 +1628,7 @@ def on_intent(intent_request, session):
         if session['attributes']['CurrentStage'] == "CheckAnswer":
             return give_quiz_feedback(session)
         elif session['attributes']['CurrentStage'] == "HelpRequest":
-            return handle_session_end_request(session)
+            return get_options_menu()
         elif session['attributes']['CurrentStage'] == "GiveQuizFeedback":
             return get_options_menu()
     elif intent_name == "AMAZON.CancelIntent" or intent_name == "AMAZON.StopIntent":
