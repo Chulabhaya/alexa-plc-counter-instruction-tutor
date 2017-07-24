@@ -209,7 +209,7 @@ def update_user_level(user_id):
             increment_question_level(user_id)
             decrement_question_level(user_id)
         elif current_total_correct != 0 and current_total_incorrect == 0:
-            if current_total_correct % 5 == 0:
+            if current_total_correct % 4 == 0:
                 increment_question_level(user_id)
             else:
                 increment_question_level(user_id)
@@ -231,19 +231,24 @@ def update_user_level(user_id):
             if (previous_total_correct == current_total_correct
                     and current_total_incorrect % 3 != 0)\
                 or (previous_total_incorrect == current_total_incorrect
-                    and current_total_correct % 5 != 0):
+                    and current_total_correct % 4 != 0):
                 increment_question_level(user_id)
                 decrement_question_level(user_id)
-            elif current_total_correct % 5 == 0 and current_total_incorrect % 3 == 0:
+            elif current_total_correct % 4 == 0 and current_total_incorrect % 3 == 0:
                 decrement_question_level(user_id)
-            elif current_total_correct % 5 == 0 and current_total_incorrect % 3 != 0:
+            elif current_total_correct % 4 == 0 and current_total_incorrect % 3 != 0:
                 increment_question_level(user_id)
-            elif current_total_correct % 5 != 0 and current_total_incorrect % 3 == 0:
+            elif current_total_correct % 4 != 0 and current_total_incorrect % 3 == 0:
                 decrement_question_level(user_id)
             else:
                 increment_question_level(user_id)
                 decrement_question_level(user_id)
 
+    # Keeps user level limited to 4
+    if get_question_level(user_id) > 4:
+        while (get_question_level(user_id) > 4):
+            decrement_question_level(user_id)
+    
     # Update the previous totals to current totals
     update_previous_total_correct(user_id)
     update_previous_total_incorrect(user_id)
@@ -1229,7 +1234,7 @@ def check_answer_in_session(intent, session):
                 speech_output = (
                     "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
                     "</prosody>" + " True is correct. " +
-                    question_details["FullAnswer"] + '"<break time="0.75s"/>"' +
+                    question_details["FullAnswer"] + '"<break time="0.75s"/>"' + " " +
                     random.choice(more_question_responses) + "</speak>"
                 )
                 card_output = card_text_format(speech_output)
@@ -1239,7 +1244,7 @@ def check_answer_in_session(intent, session):
                 speech_output = (
                     "<speak>" + '"<prosody rate="90%" pitch="high">"'+ random.choice(positive_feedback_responses) +
                     "</prosody>" + " False is correct. " +
-                    question_details["FullAnswer"] + '"<break time="0.75s"/>"' +
+                    question_details["FullAnswer"] + '"<break time="0.75s"/>"' + " " +
                     random.choice(more_question_responses) + "</speak>"
                 )
                 card_output = card_text_format(speech_output)
