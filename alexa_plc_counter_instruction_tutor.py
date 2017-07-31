@@ -1225,7 +1225,11 @@ def check_answer_in_session(intent, session):
     # question or a SelectValue question, the user's answer is checked
     # vs. the actual answer to the question and informed whether
     # they are correct or incorrect.
-    user_answer = intent['slots']['Answer']['value']
+    try:
+        user_answer = intent['slots']['Answer']['value']
+    except KeyError:
+        user_answer = "NoValue"
+    
     question_details = session.get('attributes', {})
     if question_details["QuestionType"] == "TrueFalse":
         if user_answer == "true" or user_answer == "false":
@@ -1267,13 +1271,6 @@ def check_answer_in_session(intent, session):
                 )
                 card_output = card_text_format(speech_output)
                 increment_question_incorrect(user_id, question_details["QuestionAttribute"])
-        elif user_answer is None:
-            speech_output = (
-                "<speak>" + "Sorry, your answer is invalid. For a true or false question, " +
-                "please make sure your answer is either true or false. " + '"<break time="0.75s"/>"' +
-                "Would you like another question? </speak>"
-            )
-            card_output = card_text_format(speech_output)
         else:
             speech_output = (
                 "<speak>" + "Sorry, your answer is invalid. For a true or false question, " +
@@ -1328,13 +1325,6 @@ def check_answer_in_session(intent, session):
                 )
                 card_output = card_text_format(speech_output)
                 increment_question_incorrect(user_id, question_details["QuestionAttribute"])
-        elif user_answer is None:
-            speech_output = (
-                "<speak>" + "Sorry, your answer is invalid. Please make sure to pick one of the " +
-                "listed options for a select instruction question. " + '"<break time="0.75s"/>"' +
-                "Would you like another question? </speak>"
-            )
-            card_output = card_text_format(speech_output)
         else:
             speech_output = (
                 "<speak>" + "Sorry, your answer is invalid. Please make sure to pick one of the " +
