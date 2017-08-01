@@ -1221,15 +1221,16 @@ def check_answer_in_session(intent, session):
         "Would you like a new question?",
         "Do you want a new question?",
     ]
-    # Depending on whether the user is responding to a True/False
-    # question or a SelectValue question, the user's answer is checked
-    # vs. the actual answer to the question and informed whether
-    # they are correct or incorrect.
-    try:
-        user_answer = intent['slots']['Answer']['value']
-    except KeyError:
+
+    # Check if there's no value provided for the answer in the JSON request.
+    # If there is a value provided, but it's not a valid answer, then that
+    # issue is handled in the question feedback section below.
+    user_answer = intent['slots']['Answer']['value']
+    if user_answer is None:
         user_answer = "NoValue"
-    
+
+    # User's answer is checked depending on the type of question they're
+    # answering and given feedback about whether they are correct/incorrect.
     question_details = session.get('attributes', {})
     if question_details["QuestionType"] == "TrueFalse":
         if user_answer == "true" or user_answer == "false":
