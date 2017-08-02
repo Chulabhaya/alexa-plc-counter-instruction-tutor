@@ -248,7 +248,9 @@ def update_user_level(user_id):
     if get_question_level(user_id) > 4:
         while (get_question_level(user_id) > 4):
             decrement_question_level(user_id)
-    
+    if get_question_level(user_id) < 1:
+        while (get_question_level(user_id) < 1):
+            increment_question_level(user_id)     
     # Update the previous totals to current totals
     update_previous_total_correct(user_id)
     update_previous_total_incorrect(user_id)
@@ -1225,7 +1227,10 @@ def check_answer_in_session(intent, session):
     # Check if there's no value provided for the answer in the JSON request.
     # If there is a value provided, but it's not a valid answer, then that
     # issue is handled in the question feedback section below.
-    user_answer = intent['slots']['Answer']['value']
+    try:
+        user_answer = intent['slots']['Answer']['value']
+    except KeyError:
+        user_answer = "NoValue"
     if user_answer is None:
         user_answer = "NoValue"
 
@@ -1655,9 +1660,8 @@ def lambda_handler(event, context):
     prevent someone else from configuring a skill that sends requests to this
     function.
     """
-    # if (event['session']['application']['applicationId'] !=
-    #         "amzn1.echo-sdk-ams.app.[unique-value-here]"):
-    #     raise ValueError("Invalid Application ID")
+    if (event['session']['application']['applicationId'] != "amzn1.ask.skill.c32dfdf8-721b-4772-a801-98941de04300"):
+        raise ValueError("Invalid Application ID")
 
     if event['session']['new']:
         on_session_started({'requestId': event['request']['requestId']},
