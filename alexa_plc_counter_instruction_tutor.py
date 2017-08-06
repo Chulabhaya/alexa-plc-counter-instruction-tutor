@@ -607,78 +607,6 @@ def get_question_level(user_id):
         current_level = (i['QuestionLevel'])
     return current_level
 
-def generate_select_value():
-    """ Generates a random select value question, its answer, and returns
-    the full details of the question to the caller function as a List.
-    """
-
-    # List to store question details to be returned to function caller
-    question_details = []
-
-    # Store components of question templates
-    question_attributes = []
-    question_templates = []
-
-    # Set up access to necessary databases from DynamoDB
-    dynamodb = boto3.resource('dynamodb', region_name='us-east-1')
-    select_value_table_dynamodb = dynamodb.Table('QuestionTemplate_SelectValue')
-    answer_table = dynamodb.Table('FactTable')
-
-    select_value_table = select_value_table_dynamodb.scan()
-
-    # Obtain question template components from database
-    for item in select_value_table['Items']:
-        question_attributes.append(item['Attribute'])
-        question_templates.append(item['SelectValue'])
-
-    # Store possible output variables for output question
-    all_available_parts = ["CTU", "CTD"]
-    part_ctu_answers = []
-    part_ctd_answers = []
-
-
-    # Randomly generate question's attribute
-    output_question_attribute_num = random.randint(0, 17)
-    output_question_attribute = question_attributes[output_question_attribute_num]
-
-    # Once attribute is generated, finds and stores all matching values for every
-    # respective part (i.e. the possible answer values)
-    for part in all_available_parts:
-        value = answer_table.query(KeyConditionExpression=Key('Part & Attribute')\
-            .eq(part + " " + output_question_attribute))
-        if (len(value['Items']) != 0) and (part == "CTU"):
-            for i in value['Items']:
-                part_ctu_answers.append(i['Value'].lower())
-        if (len(value['Items']) != 0) and (part == "CTD"):
-            for i in value['Items']:
-                part_ctd_answers.append(i['Value'].lower())
-
-    # Pick a part, but make sure that part has at least one value to go with it
-    # as an answer.
-    if len(part_ctu_answers) != 0 and len(part_ctd_answers) != 0:
-        output_question_part = random.choice(all_available_parts)
-    elif len(part_ctu_answers) != 0 and len(part_ctd_answers) == 0:
-        output_question_part = all_available_parts[0]
-    elif len(part_ctu_answers) == 0 and len(part_ctd_answers) != 0:
-        output_question_part = all_available_parts[1]
-    else:
-        print("Error! part_ctu_answers and part_ctd_answers lists are both empty.")
-
-    # Depending on which part is generated, find all possible answers that go with
-    # that part + attribute and store into a respective array
-    if output_question_part == all_available_parts[0]:
-        output_question = question_templates[output_question_attribute_num].replace("<PART>", \
-            output_question_part).replace("<ATTRIBUTE>", output_question_attribute)
-        question_details.append(output_question)
-        question_details.append(part_ctu_answers)
-    else:
-        output_question = question_templates[output_question_attribute_num].replace("<PART>", \
-            output_question_part).replace("<ATTRIBUTE>", output_question_attribute)
-        question_details.append(output_question)
-        question_details.append(part_ctd_answers)
-
-    return question_details
-
 def generate_select_part(question_level):
     """ Generates a random select part question. """
 
@@ -1157,30 +1085,6 @@ def get_question_from_session(intent, session):
         }
         should_end_session = False
 
-    elif question_type_num == 2:
-        question_full = generate_select_value()
-
-        card_title = "Short Answer Question"
-        speech_output = (
-            "<speak>" + question_full[0]
-            + "</speak>"
-        )
-        card_output = card_text_format(speech_output)
-        reprompt_text = (
-            "I didn't get your answer. Please answer the following question: "
-            + question_full[0]
-        )
-        session_attributes = {
-            "CardTitle": card_title,
-            "SpeechOutput": speech_output,
-            "RepromptText": reprompt_text,
-            "CurrentStage": "GenerateQuestion",
-            "QuestionType": "SelectValue",
-            "Question": question_full[0],
-            "Answer": question_full[1],
-        }
-        should_end_session = False
-
     return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, card_output, reprompt_text, should_end_session))
 
@@ -1336,20 +1240,6 @@ def check_answer_in_session(intent, session):
                 "<speak>" + "Sorry, your answer is invalid. Please make sure to pick one of the " +
                 "listed options for a select instruction question. " + '"<break time="0.75s"/>"' +
                 "Would you like another question? </speak>"
-            )
-            card_output = card_text_format(speech_output)
-    elif question_details["QuestionType"] == "SelectValue":
-        if user_answer in question_details["Answer"]:
-            speech_output = (
-                "<speak>" + "Your answer is correct. " +
-                user_answer + '"<break time="0.75s"/>"' +
-                "Would you like another question?" + "</speak>"
-            )
-            card_output = card_text_format(speech_output)
-        else:
-            speech_output = (
-                "<speak>" + "Your answer is incorrect. "
-                + '"<break time="0.75s"/>"' + "Would you like another question?" + "</speak>"
             )
             card_output = card_text_format(speech_output)
     reprompt_text = "I didn't quite catch that. Can you repeat your answer?"
